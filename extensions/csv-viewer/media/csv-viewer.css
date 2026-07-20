@@ -1,0 +1,303 @@
+/* CSV Table Viewer — uses VS Code theme variables */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--vscode-foreground);
+    background: var(--vscode-editor-background);
+    overflow: hidden;
+}
+
+.csv-viewer-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header */
+.csv-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--vscode-panel-border, #333);
+    background: var(--vscode-sideBar-background, #1e1e1e);
+    flex-shrink: 0;
+}
+
+.csv-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.csv-title h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--vscode-foreground);
+}
+
+.file-name {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground, #999);
+    background: var(--vscode-badge-background, #333);
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+
+.csv-info {
+    display: flex;
+    gap: 8px;
+}
+
+.info-badge {
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #999);
+    background: var(--vscode-badge-background, #333);
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+
+/* Toolbar */
+.csv-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--vscode-panel-border, #333);
+    background: var(--vscode-sideBar-background, #1e1e1e);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.search-box {
+    flex: 1;
+    max-width: 400px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--vscode-input-foreground, #ccc);
+    background: var(--vscode-input-background, #3c3c3c);
+    border: 1px solid var(--vscode-input-border, #555);
+    border-radius: 3px;
+    outline: none;
+}
+
+.search-box input:focus {
+    border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.toolbar-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.toolbar-controls label {
+    color: var(--vscode-descriptionForeground, #999);
+}
+
+.toolbar-controls select {
+    padding: 3px 6px;
+    font-size: 12px;
+    color: var(--vscode-dropdown-foreground, #ccc);
+    background: var(--vscode-dropdown-background, #3c3c3c);
+    border: 1px solid var(--vscode-dropdown-border, #555);
+    border-radius: 3px;
+    outline: none;
+}
+
+.toolbar-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--vscode-button-foreground, #fff);
+    background: var(--vscode-button-background, #007acc);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.toolbar-btn:hover {
+    background: var(--vscode-button-hoverBackground, #005a9e);
+}
+
+/* Table wrapper */
+.csv-table-wrapper {
+    flex: 1;
+    overflow: auto;
+    position: relative;
+}
+
+/* Table */
+.csv-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 12px;
+}
+
+.csv-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.csv-table th {
+    background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+    color: var(--vscode-foreground);
+    font-weight: 600;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 2px solid var(--vscode-panel-border, #333);
+    border-right: 1px solid var(--vscode-panel-border, #333);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+.csv-table th:hover {
+    background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.csv-table th .sort-indicator {
+    margin-left: 4px;
+    opacity: 0.5;
+    font-size: 10px;
+}
+
+.csv-table th .sort-indicator.active {
+    opacity: 1;
+}
+
+.csv-table th .col-index {
+    font-size: 9px;
+    color: var(--vscode-descriptionForeground, #777);
+    font-weight: normal;
+    margin-left: 4px;
+}
+
+/* Row number column */
+.csv-table th.row-num,
+.csv-table td.row-num {
+    background: var(--vscode-editorLineNumber-foreground, #858585);
+    color: var(--vscode-editorLineNumber-foreground, #858585);
+    text-align: right;
+    padding: 4px 8px;
+    font-size: 11px;
+    min-width: 50px;
+    border-right: 1px solid var(--vscode-panel-border, #333);
+    user-select: none;
+}
+
+.csv-table th.row-num {
+    background: var(--vscode-editorGroupHeader-tabsBackground, #252526);
+    color: var(--vscode-descriptionForeground, #777);
+}
+
+.csv-table td.row-num {
+    background: var(--vscode-editor-background);
+}
+
+.csv-table td {
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--vscode-panel-border, #2a2a2a);
+    border-right: 1px solid var(--vscode-panel-border, #2a2a2a);
+    white-space: nowrap;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
+.csv-table td:hover {
+    background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.csv-table tbody tr:nth-child(even) {
+    background: var(--vscode-editor-background);
+}
+
+.csv-table tbody tr:nth-child(odd) {
+    background: var(--vscode-list-activeSelectionBackground, rgba(255,255,255,0.04));
+}
+
+.csv-table tbody tr:hover {
+    background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+/* Highlight matching text */
+.csv-table td mark {
+    background: var(--vscode-editor-findMatchHighlightBackground, #ea5c0055);
+    color: inherit;
+    padding: 0;
+    border-radius: 1px;
+}
+
+/* Footer */
+.csv-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    border-top: 1px solid var(--vscode-panel-border, #333);
+    background: var(--vscode-sideBar-background, #1e1e1e);
+    flex-shrink: 0;
+    font-size: 12px;
+}
+
+.pagination-info {
+    color: var(--vscode-descriptionForeground, #999);
+}
+
+.pagination-controls {
+    display: flex;
+    gap: 4px;
+}
+
+.pagination-controls button {
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--vscode-foreground, #ccc);
+    background: var(--vscode-button-secondaryBackground, #3c3c3c);
+    border: 1px solid var(--vscode-panel-border, #555);
+    border-radius: 3px;
+    cursor: pointer;
+    min-width: 28px;
+}
+
+.pagination-controls button:hover {
+    background: var(--vscode-button-secondaryHoverBackground, #505050);
+}
+
+.pagination-controls button.active {
+    background: var(--vscode-button-background, #007acc);
+    color: var(--vscode-button-foreground, #fff);
+    border-color: var(--vscode-button-background, #007acc);
+}
+
+.pagination-controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Empty state */
+.csv-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--vscode-descriptionForeground, #999);
+    font-size: 14px;
+}

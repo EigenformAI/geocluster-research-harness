@@ -1,0 +1,40 @@
+C 1 CLIENT: GEOLOGY EXPLORATION COMPANY                               
+C 2 COMPANY: SEISMIC PROCESSING CONTRACTORS                         
+C 3 CREW NO: 2024-001                                               
+C 4 DATE: 20-JAN-2024                                               
+C 5 AREA: SAMPLE FIELD - SECTION 1                                  
+C 6 MAP GRID: UTM ZONE 14N                                          
+C 7 INSTRUMENT: SERCEL 428XL                                        
+C 8 RECORDING FORMAT: SEG-Y REVISION 1                              
+C 9 SAMPLE INTERVAL: 2 MS                                           
+C10 RECORD LENGTH: 6000 MS                                          
+C11 FOLD: 120                                                       
+C12 PROCESSING: DECON, STACK, MIGRATION                             
+C13 DATUM: MEAN SEA LEVEL                                           
+C14 PROJECTION: UTM                                                 
+C15 COORDINATE SYSTEM: WGS84                                        
+C16 SOURCE: VIBROSEIS                                               
+C17 RECEIVER: GEOPHONE                                              
+C18 LINE DIRECTION: E-W                                             
+C19 SHOT POINT INTERVAL: 220 FT                                     
+C20 GROUP INTERVAL: 110 FT                                          
+C21 OFFSET RANGE: 220-13200 FT                                      
+C22 TOTAL TRACES: 15840                                             
+C23 ACQUISITION PARAMETERS:                                         
+C24   - SOURCE FREQUENCY: 10-80 HZ                                 
+C25   - RECORDING FILTER: 3-125 HZ                                 
+C26   - NOISE SUPPRESSION: APPLIED                                 
+C27 PROCESSING PARAMETERS:                                          
+C28   - SPHERICAL DIVERGENCE CORRECTION: APPLIED                   
+C29   - SURFACE CONSISTENT DECONVOLUTION: APPLIED                  
+C30   - VELOCITY ANALYSIS: EVERY 50 SHOT POINTS                    
+C31   - NMO CORRECTION: APPLIED                                    
+C32   - STACK: CMP STACK                                           
+C33   - POST-STACK MIGRATION: TIME MIGRATION                       
+C34 DATA QUALITY:                                                   
+C35   - SIGNAL TO NOISE RATIO: GOOD TO EXCELLENT                   
+C36   - FREQUENCY CONTENT: 15-70 HZ DOMINANT                       
+C37   - LATERAL CONTINUITY: EXCELLENT                              
+C38 END OF EBCDIC HEADER                                           
+C39                                                                 
+C40 THIS IS A SAMPLE SEG-Y FILE FOR TESTING PURPOSES

@@ -1,0 +1,19 @@
+Cline
+Copyright 2025 Cline Bot Inc.
+Licensed under the Apache License, Version 2.0
+
+This product includes software developed by Cline Bot Inc.
+https://github.com/cline/cline
+
+==========================================================================
+
+This fork has been modified by GeoCluster AI (https://www.geocluster.net/)
+for use in GeologyIDE, a geological data analysis platform.
+
+Modifications include but are not limited to:
+- Custom system prompt variants for geological analysis (geology variant)
+- Agent mode toggle (Geology / Standard)
+- LLM proxy integration for secure API key handling
+- OpenRouter provider customization
+- UI customizations for geological workflows
+- Specialist agent delegation system for geological tools

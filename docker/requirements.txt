@@ -1,0 +1,15 @@
+# Python environment available inside the IDE workspace (system python3).
+# Used by the agent's analysis specialists for ad-hoc scripts; the MCP server
+# has its own uv-managed virtualenv (see mcp-server/).
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.2.0
+matplotlib==3.8.2
+scipy>=1.7.0
+scikit-fuzzy>=0.4.2
+Pillow>=10.0.0
+requests
+seaborn
+
+# Report export (markdown -> PDF via pandoc/weasyprint)
+weasyprint

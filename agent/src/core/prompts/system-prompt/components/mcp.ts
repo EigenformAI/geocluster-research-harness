@@ -1,0 +1,156 @@
+import type { McpServer, McpTool } from "@/shared/mcp"
+import type { McpToolFilter } from "@/shared/specialists"
+import { SystemPromptSection } from "../templates/placeholders"
+import { TemplateEngine } from "../templates/TemplateEngine"
+import type { PromptVariant, SystemPromptContext } from "../types"
+
+/**
+ * Checks if there are any enabled MCP servers in the context.
+ * This is a utility function to standardize MCP server detection across all prompt variants.
+ *
+ * @param context - The system prompt context
+ * @returns true if there are enabled MCP servers, false otherwise
+ *
+ * @example
+ * const hasMcp = hasEnabledMcpServers(context)
+ * if (hasMcp) {
+ *   // Include MCP-specific instructions
+ * }
+ */
+export function hasEnabledMcpServers(context: SystemPromptContext): boolean {
+	return (context.mcpHub?.getServers() || []).length > 0
+}
+
+const MCP_TEMPLATE_TEXT = `MCP SERVERS
+
+The Model Context Protocol (MCP) enables communication between the system and locally running MCP servers that provide additional tools, resources, and prompts to extend your capabilities.
+
+# Connected MCP Servers
+
+When a server is connected, you can use the server's tools via the \`use_mcp_tool\` tool, and access the server's resources via the \`access_mcp_resource\` tool.
+
+Servers may also provide prompts - predefined templates that can be invoked by users to generate contextual messages.
+
+{{MCP_SERVERS_LIST}}`
+
+export async function getMcp(variant: PromptVariant, context: SystemPromptContext): Promise<string | undefined> {
+	let servers = context.mcpHub?.getServers() || []
+	// Apply MCP tool filter if the variant defines one (specialist variants)
+	if (variant.mcpToolFilter) {
+		servers = filterMcpServers(servers, variant.mcpToolFilter)
+	}
+	// Skip the section if there are no servers connected / available
+	if (servers.length === 0) {
+		return undefined
+	}
+	return await getMcpServers(servers, variant, context)
+}
+
+/**
+ * Simple glob match: supports `*` as wildcard for any characters.
+ * e.g., `*inspect*` matches `geo_inspect_raster`
+ */
+export function globMatch(pattern: string, value: string): boolean {
+	const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")
+	return new RegExp(`^${escaped}$`, "i").test(value)
+}
+
+/**
+ * Filters MCP servers and their tools based on a McpToolFilter.
+ * - allowedServers/blockedServers filter by server name
+ * - allowedToolPatterns/blockedToolPatterns filter individual tools within servers
+ * - Servers with zero remaining tools after filtering are removed
+ */
+function filterMcpServers(servers: McpServer[], filter: McpToolFilter): McpServer[] {
+	let filtered = [...servers]
+
+	// Filter servers by name
+	if (filter.allowedServers?.length) {
+		filtered = filtered.filter((s) => filter.allowedServers!.some((pattern) => globMatch(pattern, s.name)))
+	}
+	if (filter.blockedServers?.length) {
+		filtered = filtered.filter((s) => !filter.blockedServers!.some((pattern) => globMatch(pattern, s.name)))
+	}
+
+	// Filter tools within servers
+	if (filter.allowedToolPatterns?.length || filter.blockedToolPatterns?.length) {
+		filtered = filtered
+			.map((server) => {
+				if (!server.tools?.length) return server
+				let tools = server.tools
+				if (filter.allowedToolPatterns?.length) {
+					tools = tools.filter((t: McpTool) => filter.allowedToolPatterns!.some((p) => globMatch(p, t.name)))
+				}
+				if (filter.blockedToolPatterns?.length) {
+					tools = tools.filter((t: McpTool) => !filter.blockedToolPatterns!.some((p) => globMatch(p, t.name)))
+				}
+				return { ...server, tools }
+			})
+			.filter((server) => (server.tools?.length ?? 0) > 0)
+	}
+
+	return filtered
+}
+
+async function getMcpServers(servers: McpServer[], variant: PromptVariant, context: SystemPromptContext): Promise<string> {
+	const template = variant.componentOverrides?.[SystemPromptSection.MCP]?.template || MCP_TEMPLATE_TEXT
+
+	const serversList = servers.length > 0 ? formatMcpServersList(servers) : "(No MCP servers currently connected)"
+	return new TemplateEngine().resolve(template, context, {
+		MCP_SERVERS_LIST: serversList,
+	})
+}
+
+function formatMcpServersList(servers: McpServer[]): string {
+	return servers
+		.filter((server) => server.status === "connected")
+		.map((server) => {
+			const tools = server.tools
+				?.map((tool) => {
+					const schemaStr = tool.inputSchema
+						? `    Input Schema:
+    ${JSON.stringify(tool.inputSchema, null, 2).split("\n").join("\n    ")}`
+						: ""
+
+					return `- ${tool.name}: ${tool.description}${schemaStr ? "\n" + schemaStr : ""}`
+				})
+				.join("\n\n")
+
+			const templates = server.resourceTemplates
+				?.map((template) => `- ${template.uriTemplate} (${template.name}): ${template.description}`)
+				.join("\n")
+
+			const resources = server.resources
+				?.map((resource) => `- ${resource.uri} (${resource.name}): ${resource.description}`)
+				.join("\n")
+
+			const prompts = server.prompts
+				?.map((prompt) => {
+					const argsStr = prompt.arguments?.length
+						? `\n    Arguments: ${prompt.arguments
+								.map(
+									(arg) =>
+										`${arg.name}${arg.required ? " (required)" : ""}${arg.description ? `: ${arg.description}` : ""}`,
+								)
+								.join(", ")}`
+						: ""
+					const title = prompt.title ? ` (${prompt.title})` : ""
+					return `- ${prompt.name}${title}: ${prompt.description || "No description"}${argsStr}`
+				})
+				.join("\n")
+
+			const config = JSON.parse(server.config)
+
+			return (
+				`## ${server.name}` +
+				(config.command
+					? ` (\`${config.command}${config.args && Array.isArray(config.args) ? ` ${config.args.join(" ")}` : ""}\`)`
+					: "") +
+				(tools ? `\n\n### Available Tools\n${tools}` : "") +
+				(templates ? `\n\n### Resource Templates\n${templates}` : "") +
+				(resources ? `\n\n### Direct Resources\n${resources}` : "") +
+				(prompts ? `\n\n### Available Prompts\n${prompts}` : "")
+			)
+		})
+		.join("\n\n")
+}

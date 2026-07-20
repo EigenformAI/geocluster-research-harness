@@ -1,0 +1,39 @@
+{
+  "name": "csv-viewer",
+  "displayName": "CSV Table Viewer",
+  "description": "CSV/TSV table viewer for Project Environment",
+  "version": "1.0.0",
+  "publisher": "geocluster",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "csvViewer.tableView",
+        "displayName": "CSV Table Viewer",
+        "selector": [
+          { "filenamePattern": "*.csv" },
+          { "filenamePattern": "*.CSV" },
+          { "filenamePattern": "*.tsv" },
+          { "filenamePattern": "*.TSV" }
+        ],
+        "priority": "default"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.5.0"
+  }
+}

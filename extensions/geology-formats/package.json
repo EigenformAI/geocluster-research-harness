@@ -1,0 +1,127 @@
+{
+  "name": "geology-formats",
+  "displayName": "Geology Formats",
+  "description": "LAS file viewer and geological format support for Project Environment",
+  "version": "1.0.0",
+  "publisher": "geocluster",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onLanguage:las",
+    "onLanguage:segy",
+    "onLanguage:dlis",
+    "onLanguage:wlef",
+    "onLanguage:petrel"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "geology.lasViewer",
+        "displayName": "LAS File Viewer",
+        "selector": [
+          {
+            "filenamePattern": "*.las"
+          },
+          {
+            "filenamePattern": "*.LAS"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "languages": [
+      {
+        "id": "las",
+        "aliases": [
+          "LAS",
+          "Log ASCII Standard"
+        ],
+        "extensions": [
+          ".las",
+          ".LAS"
+        ],
+        "mimetypes": [
+          "application/x-las",
+          "text/x-las"
+        ]
+      },
+      {
+        "id": "segy",
+        "aliases": [
+          "SEG-Y",
+          "SEGY",
+          "Seismic Data"
+        ],
+        "extensions": [
+          ".sgy",
+          ".segy",
+          ".SGY",
+          ".SEGY"
+        ],
+        "mimetypes": [
+          "application/x-segy"
+        ]
+      },
+      {
+        "id": "dlis",
+        "aliases": [
+          "DLIS",
+          "Digital Log Interchange Standard"
+        ],
+        "extensions": [
+          ".dlis",
+          ".DLIS"
+        ],
+        "mimetypes": [
+          "application/x-dlis"
+        ]
+      },
+      {
+        "id": "wlef",
+        "aliases": [
+          "WLEF",
+          "Well Log Exchange Format"
+        ],
+        "extensions": [
+          ".wlef",
+          ".WLEF"
+        ],
+        "mimetypes": [
+          "application/x-wlef"
+        ]
+      },
+      {
+        "id": "petrel",
+        "aliases": [
+          "Petrel",
+          "Schlumberger Petrel"
+        ],
+        "extensions": [
+          ".pet",
+          ".PET",
+          ".ptd",
+          ".PTD"
+        ],
+        "mimetypes": [
+          "application/x-petrel"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "^5.5.0"
+  }
+}

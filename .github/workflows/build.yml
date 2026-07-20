@@ -1,0 +1,82 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  agent:
+    name: Agent — tests + VSIX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+
+      - name: Install dependencies
+        working-directory: agent
+        run: |
+          npm ci
+          cd webview-ui && npm ci
+          cd ../cli && npm ci
+
+      - name: Generate protos
+        working-directory: agent
+        run: npm run protos
+
+      - name: Unit tests (includes design-invariants suite)
+        working-directory: agent
+        run: npm run test:unit
+
+      - name: Package extension
+        working-directory: agent
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          npm run package
+          npx vsce package --allow-package-secrets sendgrid --no-dependencies --out ../geology-agent.vsix
+
+      - name: Build CLI
+        working-directory: agent
+        run: npm run cli:build:production
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: geology-agent-vsix
+          path: geology-agent.vsix
+
+  helper-extensions:
+    name: Helper extensions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build geology-formats + csv-viewer
+        run: |
+          cd extensions/geology-formats && npm ci && npm run package && cd ../..
+          cd extensions/csv-viewer && npm ci && npm run package
+
+  docker:
+    name: Docker build smoke (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

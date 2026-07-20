@@ -1,0 +1,24 @@
+# Dependencies and build output (agent/ has its own .gitignore too)
+node_modules/
+dist/
+out/
+build/
+*.vsix
+*.tsbuildinfo
+
+# Python
+__pycache__/
+.venv/
+*.pyc
+
+# Environment / secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Logs and scratch
+*.log
+logs/
+
+# OS / editor
+.DS_Store

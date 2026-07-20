@@ -1,0 +1,519 @@
+/* Geology Formats — LAS Viewer Webview Styles
+ * Ported from Theia las-viewer.css with --theia-* → --vscode-* CSS var rename */
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: var(--vscode-editor-background);
+    color: var(--vscode-editor-foreground);
+    font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+}
+
+.las-viewer-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.las-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-panel-background);
+}
+
+.las-header h2 {
+    margin: 0 0 10px 0;
+    color: var(--vscode-foreground);
+    font-weight: 600;
+}
+
+.las-file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.file-name {
+    font-weight: 600;
+    color: var(--vscode-textLink-foreground);
+}
+
+.file-path {
+    font-size: 0.9em;
+    color: var(--vscode-descriptionForeground);
+    display: block;
+}
+
+.las-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.las-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    background: var(--vscode-tab-inactiveBackground);
+    flex-shrink: 0;
+}
+
+.las-tab {
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    color: var(--vscode-tab-inactiveForeground);
+    cursor: pointer;
+    font-size: 13px;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+    font-family: inherit;
+}
+
+.las-tab:hover {
+    background: var(--vscode-tab-hoverBackground);
+    color: var(--vscode-tab-activeForeground);
+}
+
+.las-tab.active {
+    background: var(--vscode-tab-activeBackground);
+    color: var(--vscode-tab-activeForeground);
+    border-bottom-color: var(--vscode-focusBorder, #01826a);
+}
+
+.las-tab-content {
+    flex: 1;
+    overflow: hidden;
+}
+
+.tab-panel {
+    height: 100%;
+    overflow: auto;
+    padding: 20px;
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* Overview Panel */
+.overview-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1200px;
+}
+
+.overview-card {
+    background: var(--vscode-input-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 6px;
+    padding: 20px;
+}
+
+.overview-card h3 {
+    margin: 0 0 15px 0;
+    color: var(--vscode-foreground);
+    font-weight: 600;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.summary-item label {
+    font-weight: 500;
+    color: var(--vscode-descriptionForeground);
+}
+
+.summary-item span {
+    font-weight: 600;
+    color: var(--vscode-foreground);
+}
+
+.quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.action-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 15px;
+    background: var(--vscode-button-background, #01826a);
+    color: var(--vscode-button-foreground, white);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: background-color 0.2s ease;
+}
+
+.action-button:hover {
+    background: var(--vscode-button-hoverBackground, #00a88a);
+}
+
+/* Table Styles */
+.info-table-container {
+    overflow: auto;
+    max-height: calc(100vh - 200px);
+}
+
+.las-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.las-info-table th {
+    background: var(--vscode-list-headerBackground, var(--vscode-editor-background));
+    color: var(--vscode-list-headerForeground, var(--vscode-foreground));
+    padding: 12px 8px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.las-info-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--vscode-widget-border);
+    color: var(--vscode-foreground);
+}
+
+.las-info-table tr:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+/* Data Table */
+.data-table-container {
+    height: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+}
+
+.data-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.data-controls label {
+    font-weight: 500;
+    color: var(--vscode-descriptionForeground);
+}
+
+.data-controls select,
+.data-controls button {
+    padding: 6px 12px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.data-info {
+    margin-left: auto;
+    color: var(--vscode-descriptionForeground);
+}
+
+.export-btn {
+    margin-left: auto;
+    padding: 8px 15px;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.export-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.scrollable-table {
+    flex: 1;
+    overflow: auto;
+    max-height: 400px;
+    border: 1px solid var(--vscode-panel-border);
+}
+
+.las-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.las-data-table th {
+    background: var(--vscode-list-headerBackground, var(--vscode-editor-background));
+    color: var(--vscode-list-headerForeground, var(--vscode-foreground));
+    padding: 8px 12px;
+    text-align: right;
+    font-weight: 600;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.las-data-table td {
+    padding: 6px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--vscode-widget-border);
+    color: var(--vscode-foreground);
+}
+
+.las-data-table tr:nth-child(even) {
+    background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.las-data-table tr:hover {
+    background: var(--vscode-list-hoverBackground);
+}
+
+.data-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    padding: 15px 0;
+    border-top: 1px solid var(--vscode-panel-border);
+}
+
+.nav-btn {
+    padding: 8px 15px;
+    background: var(--vscode-button-background, #01826a);
+    color: var(--vscode-button-foreground, white);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.nav-btn:hover:not(:disabled) {
+    background: var(--vscode-button-hoverBackground, #00a88a);
+}
+
+.nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Plot Panel */
+.plot-container {
+    height: calc(100% - 40px);
+    display: flex;
+    flex-direction: column;
+}
+
+.plot-controls {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 15px 0;
+    border-bottom: 1px solid var(--vscode-panel-border);
+    flex-wrap: wrap;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-group label {
+    font-weight: 500;
+    color: var(--vscode-descriptionForeground);
+    white-space: nowrap;
+}
+
+.control-group select,
+.control-group input {
+    padding: 6px 10px;
+    background: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.plot-btn {
+    padding: 8px 15px;
+    background: var(--vscode-button-background, #01826a);
+    color: var(--vscode-button-foreground, white);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    margin-left: auto;
+}
+
+.plot-btn:hover {
+    background: var(--vscode-button-hoverBackground, #00a88a);
+}
+
+.plot-area {
+    flex: 1;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    min-height: 300px;
+}
+
+.plot-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--vscode-descriptionForeground);
+    text-align: center;
+    gap: 10px;
+}
+
+.plot-placeholder p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Chart */
+.simple-chart {
+    padding: 20px;
+}
+
+.chart-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.chart-stats {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 15px;
+}
+
+.chart-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 1px;
+    background: var(--vscode-input-background);
+    overflow-x: auto;
+}
+
+.chart-bar {
+    background: var(--vscode-button-background, #01826a);
+    min-width: 3px;
+}
+
+.chart-bar:hover {
+    opacity: 0.8;
+}
+
+/* Null value styling */
+.null-value {
+    color: var(--vscode-errorForeground, #f44336);
+    font-style: italic;
+}
+
+/* Error State */
+.las-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+    color: var(--vscode-errorForeground);
+}
+
+.error-message h3 {
+    margin: 0 0 10px 0;
+    font-size: 18px;
+}
+
+.error-message p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .overview-content {
+        grid-template-columns: 1fr;
+    }
+
+    .plot-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .control-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .plot-btn {
+        margin-left: 0;
+        margin-top: 10px;
+    }
+}
+
+/* Scrollbar Styling */
+.scrollable-table::-webkit-scrollbar,
+.info-table-container::-webkit-scrollbar,
+.plot-area::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.scrollable-table::-webkit-scrollbar-track,
+.info-table-container::-webkit-scrollbar-track,
+.plot-area::-webkit-scrollbar-track {
+    background: var(--vscode-scrollbar-shadow, transparent);
+}
+
+.scrollable-table::-webkit-scrollbar-thumb,
+.info-table-container::-webkit-scrollbar-thumb,
+.plot-area::-webkit-scrollbar-thumb {
+    background: var(--vscode-scrollbarSlider-background);
+    border-radius: 4px;
+}
+
+.scrollable-table::-webkit-scrollbar-thumb:hover,
+.info-table-container::-webkit-scrollbar-thumb:hover,
+.plot-area::-webkit-scrollbar-thumb:hover {
+    background: var(--vscode-scrollbarSlider-hoverBackground);
+}

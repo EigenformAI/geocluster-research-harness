@@ -1,0 +1,15 @@
+Geocluster Research Harness
+Copyright 2026 EigenformAI
+
+This product includes software developed by third parties:
+
+- Cline (https://github.com/cline/cline), Copyright Cline Bot Inc.,
+  licensed under the Apache License 2.0. The `agent/` directory is a fork of
+  Cline v3.56.0 with geology-specific modifications; the upstream LICENSE is
+  retained at agent/LICENSE.
+
+- code-server (https://github.com/coder/code-server), MIT License, and
+  Visual Studio Code — Open Source (https://github.com/microsoft/vscode),
+  MIT License. Downloaded at image build time.
+
+See ThirdPartyNotices.txt for the full set of third-party attributions.

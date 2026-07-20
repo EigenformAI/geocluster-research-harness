@@ -1,0 +1,43 @@
+# =============================================================================
+# Geocluster Research Harness — local run
+#
+# Quick start (prebuilt image):
+#   docker compose up
+#   open http://localhost:3000
+#
+# Build from source instead (fresh clone needs submodules):
+#   git submodule update --init
+#   docker compose up --build
+#
+# Optional: skip the provider setup screen by passing an OpenRouter key:
+#   OPENROUTER_API_KEY=sk-or-... docker compose up
+#
+# SECURITY: the IDE has no authentication of its own. Do not publish port 3000
+# beyond localhost; if you must host it, put it behind a reverse proxy with auth.
+# =============================================================================
+
+services:
+  harness:
+    image: ghcr.io/eigenformai/geocluster-research-harness:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geocluster-research-harness
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Optional — pre-configures the OpenRouter provider. Leave unset to pick
+      # any provider (Anthropic, OpenAI, Ollama, …) in the welcome screen.
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    volumes:
+      - workspace:/workspace
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  workspace:
