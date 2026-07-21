@@ -10,28 +10,40 @@ Built on [Cline](https://github.com/cline/cline) (Apache-2.0, fork of v3.56.0),
 [code-server](https://github.com/coder/code-server), and
 [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp).
 
-## Quick start (Docker)
+## Quick start — build and run (Docker)
+
+Requires [Docker](https://docs.docker.com/get-docker/) (Docker Desktop on
+Windows/macOS). Works the same in bash, PowerShell, and cmd:
 
 ```bash
-docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace \
-  ghcr.io/eigenformai/geocluster-research-harness
+git clone https://github.com/EigenformAI/geocluster-research-harness.git
+cd geocluster-research-harness
+git submodule update --init
+docker compose up --build
 ```
 
-Open **http://localhost:3000**. The workspace comes pre-loaded with a synthetic
-geology project; open the Geology Agent panel in the right sidebar, pick any
-supported model provider (OpenRouter, Anthropic, OpenAI, local Ollama, …),
-paste your API key, and ask it to analyze the sample data.
+The first build compiles everything from source (agent extension, CLI, MCP
+server) and takes a while — later builds are cached and fast. When it's up,
+open **http://localhost:3000**: the workspace comes pre-loaded with a
+synthetic geology project. Open the Geology Agent panel in the right sidebar,
+pick a model provider, paste your API key, and ask it to analyze the sample
+data.
 
 Already have an [OpenRouter](https://openrouter.ai) key? Skip the setup screen:
 
 ```bash
-docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace \
-  -e OPENROUTER_API_KEY=sk-or-... \
-  ghcr.io/eigenformai/geocluster-research-harness
+OPENROUTER_API_KEY=sk-or-... docker compose up --build
 ```
 
-Or with compose: clone the repo and `docker compose up` (add `--build` to
-build from source — run `git submodule update --init` first).
+(PowerShell: `$env:OPENROUTER_API_KEY="sk-or-..."; docker compose up --build`)
+
+### Prebuilt image
+
+Once releases are published, the no-clone path is:
+
+```bash
+docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace ghcr.io/eigenformai/geocluster-research-harness
+```
 
 > **Security note:** the IDE itself has no authentication (`--auth none`
 > behind a localhost port). Never expose port 3000 to the internet; if you
@@ -56,8 +68,10 @@ for the full experience. See [docs/VSIX_INSTALL.md](docs/VSIX_INSTALL.md).
 
 ## Providers
 
-The full Cline provider matrix is available: OpenRouter, Anthropic, OpenAI,
-Google Gemini, AWS Bedrock, Ollama/LM Studio (local), DeepSeek, and more.
+The setup screen currently surfaces **OpenRouter**, **Anthropic**, and
+**ChatGPT Subscription**. Additional providers (Gemini, Bedrock, Ollama,
+DeepSeek, …) exist in the code and can be enabled via a one-line allowlist in
+`agent/webview-ui/src/components/settings/ApiOptions.tsx`.
 `OPENROUTER_API_KEY` is only a convenience — if it's unset you choose a
 provider in the welcome screen, and a provider chosen in the UI is never
 overridden by the environment.

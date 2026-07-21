@@ -11,39 +11,24 @@ const AboutSection = ({ version, renderSectionHeader }: AboutSectionProps) => {
 			{renderSectionHeader("about")}
 			<Section>
 				<div className="flex px-4 flex-col gap-2">
-					<h2 className="text-lg font-semibold">Cline v{version}</h2>
+					<h2 className="text-lg font-semibold">Geology Agent v{version}</h2>
 					<p>
-						An AI assistant that can use your CLI and Editor. Cline can handle complex software development tasks
-						step-by-step with tools that let him create & edit files, explore large projects, use the browser, and
-						execute terminal commands (after you grant permission).
-					</p>
-
-					<h3 className="text-md font-semibold">Community & Support</h3>
-					<p>
-						<VSCodeLink href="https://x.com/cline">X</VSCodeLink>
-						{" • "}
-						<VSCodeLink href="https://discord.gg/cline">Discord</VSCodeLink>
-						{" • "}
-						<VSCodeLink href="https://www.reddit.com/r/cline/"> r/cline</VSCodeLink>
+						A geology-focused AI research agent for your IDE. It analyzes geochemistry tables, well logs, rasters, and
+						technical reports using specialist agents and geoscience MCP tools, and can create & edit files and
+						execute terminal commands (after you grant permission). Part of the Geocluster Research Harness.
 					</p>
 
 					<h3 className="text-md font-semibold">Development</h3>
 					<p>
-						<VSCodeLink href="https://github.com/cline/cline">GitHub</VSCodeLink>
+						<VSCodeLink href="https://github.com/EigenformAI/geocluster-research-harness">GitHub</VSCodeLink>
 						{" • "}
-						<VSCodeLink href="https://github.com/cline/cline/issues"> Issues</VSCodeLink>
-						{" • "}
-						<VSCodeLink href="https://github.com/cline/cline/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop">
-							{" "}
-							Feature Requests
-						</VSCodeLink>
+						<VSCodeLink href="https://github.com/EigenformAI/geocluster-research-harness/issues"> Issues</VSCodeLink>
 					</p>
 
-					<h3 className="text-md font-semibold">Resources</h3>
+					<h3 className="text-md font-semibold">Attribution</h3>
 					<p>
-						<VSCodeLink href="https://docs.cline.bot/">Documentation</VSCodeLink>
-						{" • "}
-						<VSCodeLink href="https://cline.bot/">https://cline.bot</VSCodeLink>
+						Built on <VSCodeLink href="https://github.com/cline/cline">Cline</VSCodeLink> (Apache-2.0). This fork is
+						not affiliated with or endorsed by the Cline team.
 					</p>
 				</div>
 			</Section>

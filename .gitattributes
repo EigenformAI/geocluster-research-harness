@@ -1,0 +1,4 @@
+# Shell scripts are exec'd inside the Linux image — a CRLF shebang from a
+# Windows checkout (core.autocrlf) breaks the interpreter lookup with
+# "exec: no such file or directory". Force LF regardless of platform.
+*.sh text eol=lf

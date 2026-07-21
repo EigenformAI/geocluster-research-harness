@@ -139,7 +139,10 @@ const ApiOptions = ({
 	const dropdownListRef = useRef<HTMLDivElement>(null)
 
 	const providerOptions = useMemo(() => {
-		let providers = PROVIDERS.list
+		// Public build: only these providers are surfaced for now. Add values
+		// back to this list to re-enable more of the upstream provider matrix.
+		const enabledProviders = ["openrouter", "anthropic", "openai-codex"]
+		let providers = PROVIDERS.list.filter((option) => enabledProviders.includes(option.value))
 		// Filter by platform
 		if (PLATFORM_CONFIG.type !== PlatformType.VSCODE) {
 			// Don't include VS Code LM API for non-VSCode platforms

@@ -127,6 +127,10 @@ const makeProviderInfo = (modelId: string, providerId: string = "test") => ({
 const baseContext: SystemPromptContext = {
 	cwd: "/test/project",
 	ide: "TestIde",
+	// These tests exercise the standard-mode model-family variants. Without
+	// this, the geology variant matches every model (it is the default agent
+	// mode); geology/specialist prompts are covered by design-invariants.test.ts.
+	agentMode: "standard",
 	supportsBrowserUse: true,
 	clineWebToolsEnabled: true,
 	mcpHub: {

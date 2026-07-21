@@ -4,7 +4,6 @@ import AccountView from "./components/account/AccountView"
 import ChatView from "./components/chat/ChatView"
 import HistoryView from "./components/history/HistoryView"
 import McpView from "./components/mcp/configuration/McpConfigurationView"
-import OnboardingView from "./components/onboarding/OnboardingView"
 import SettingsView from "./components/settings/SettingsView"
 import WelcomeView from "./components/welcome/WelcomeView"
 import WorktreesView from "./components/worktrees/WorktreesView"
@@ -26,7 +25,6 @@ const AppContent = () => {
 		showAccount,
 		showWorktrees,
 		showAnnouncement,
-		onboardingModels,
 		setShowAnnouncement,
 		setShouldShowAnnouncement,
 		closeMcpView,
@@ -60,7 +58,9 @@ const AppContent = () => {
 	}
 
 	if (showWelcome) {
-		return onboardingModels ? <OnboardingView onboardingModels={onboardingModels} /> : <WelcomeView />
+		// Always use the local welcome view — the OnboardingView is the
+		// Cline-account signup flow, which this fork does not use.
+		return <WelcomeView />
 	}
 
 	return (

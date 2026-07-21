@@ -184,7 +184,9 @@ COPY --chown=theia:theia sample-workspace/ /opt/seed-data/
 # ---- Entrypoint + proxy ----
 COPY --chown=theia:theia docker/ide-proxy.js /home/theia/ide-proxy.js
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Strip CR defensively: a CRLF checkout (Windows core.autocrlf) turns the
+# shebang into "#!/bin/bash\r" and exec fails with "no such file or directory".
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENV NODE_ENV=production
 ENV SHELL=/bin/bash

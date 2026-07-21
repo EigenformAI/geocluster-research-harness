@@ -10,6 +10,9 @@ describe("PromptRegistry", () => {
 	const mockContext: SystemPromptContext = {
 		cwd: "/test/project",
 		ide: "TestIde",
+		// Standard mode — family extraction tests target the upstream model
+		// families; without this the geology variant matches everything.
+		agentMode: "standard",
 		supportsBrowserUse: true,
 		mcpHub: {
 			getServers: () => [],
