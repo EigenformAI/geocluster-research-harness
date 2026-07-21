@@ -39,11 +39,11 @@ jobs:
           cache-dependency-path: agent/package-lock.json
 
       - name: Install dependencies
+        # cli/ is an npm workspace of agent/ — covered by the root npm ci
         working-directory: agent
         run: |
           npm ci
           cd webview-ui && npm ci
-          cd ../cli && npm ci
 
       - name: Build VSIX
         working-directory: agent

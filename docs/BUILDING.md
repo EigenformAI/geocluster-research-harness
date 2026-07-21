@@ -26,7 +26,7 @@ Requires Node 20.
 
 ```bash
 cd agent
-npm ci && (cd webview-ui && npm ci) && (cd cli && npm ci)
+npm ci && (cd webview-ui && npm ci)  # cli/ is an npm workspace — covered by root npm ci
 npm run protos                       # generates src/generated/ (not committed)
 NODE_OPTIONS=--max-old-space-size=4096 npm run package
 npx vsce package --allow-package-secrets sendgrid --no-dependencies --out geology-agent.vsix

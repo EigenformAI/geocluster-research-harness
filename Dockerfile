@@ -17,10 +17,12 @@ FROM node:20 AS builder
 WORKDIR /build
 
 # ---- Agent (Cline fork) ----
+# NOTE: cli/ is an npm workspace of agent/ — the root `npm ci` installs its
+# dependencies too. Do NOT run `npm ci` inside agent/cli: it re-resolves the
+# project root and prunes agent/node_modules down to the CLI's dep tree.
 COPY agent/ agent/
 RUN cd agent && npm ci
 RUN cd agent/webview-ui && npm ci
-RUN cd agent/cli && npm ci
 
 # Generate proto bindings (src/generated/ is not committed), then bundle and
 # package the VSIX. Type-checking/esbuild of the full fork needs a larger
