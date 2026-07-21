@@ -1,3 +1,0 @@
-[submodule "mcp-server"]
-	path = mcp-server
-	url = https://github.com/EigenformAI/geocluster-mcp.git
