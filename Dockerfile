@@ -35,9 +35,9 @@ RUN cd agent && npm run protos && \
 # specialist-dispatch protocol between extension and CLI is version-coupled).
 RUN cd agent && npm run cli:build:production && \
     mkdir -p /build/cline-cli && \
-    cp -r agent/cli/dist /build/cline-cli/dist && \
-    cp agent/cli/package.json /build/cline-cli/ && \
-    if [ -f agent/cli/package-lock.json ]; then cp agent/cli/package-lock.json /build/cline-cli/; fi
+    cp -r cli/dist /build/cline-cli/dist && \
+    cp cli/package.json /build/cline-cli/ && \
+    if [ -f cli/package-lock.json ]; then cp cli/package-lock.json /build/cline-cli/; fi
 
 # ---- Helper extensions (LAS/geology file viewers, CSV viewer) ----
 COPY extensions/ extensions/
