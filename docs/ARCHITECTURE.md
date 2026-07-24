@@ -50,9 +50,6 @@ A fork of Cline v3.56.0. The headline changes (full list in
   `dispatch_specialist`; each layer has an enforced MCP tool filter. See
   [SPECIALIST_AGENT_ARCHITECTURE.md](SPECIALIST_AGENT_ARCHITECTURE.md) and
   [DESIGN_INVARIANTS.md](DESIGN_INVARIANTS.md).
-- **Report Analysis mode** — citation-grounded Q&A over workspace reports; a
-  citation guard rejects answers that cite files not present in the
-  workspace. See [REPORT_ANALYSIS_MODE.md](REPORT_ANALYSIS_MODE.md).
 - **Provider handling** — the full Cline provider matrix is retained. If
   `OPENROUTER_API_KEY` is set in the environment, the extension pre-configures
   OpenRouter on first run (and never overrides a provider the user picked in

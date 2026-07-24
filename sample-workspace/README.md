@@ -6,8 +6,8 @@ you can try the agent right away.
 ## First step: connect a model
 
 Open the **Geology Agent** panel (right sidebar). If you haven't provided an
-API key yet, the setup screen lets you pick any supported provider — OpenRouter,
-Anthropic, OpenAI, a local Ollama model, and more — and paste your key.
+API key yet, the setup screen lets you pick a provider — OpenRouter,
+Anthropic, or a ChatGPT subscription — and paste your key.
 
 ## What's in this workspace
 
@@ -25,9 +25,8 @@ Ask the agent (in its chat panel):
 - *"Inspect data/meridian_ridge_geochem.csv and summarize the dataset."*
 - *"Cluster the geochemistry and map the clusters against lithology."*
 - *"Which elements are the best pathfinders for gold here?"*
-- Switch to **Report Analysis** mode (chip above the chat box) and ask
-  questions about `reports/meridian_ridge_technical_report.md` — answers are
-  grounded in the report with citations.
+- *"Summarize the drill program described in
+  reports/meridian_ridge_technical_report.md."*
 
 The heavy lifting (clustering, rasters, plots, anomaly ranking) runs through
 the bundled geological MCP server — the agent will call those tools as needed

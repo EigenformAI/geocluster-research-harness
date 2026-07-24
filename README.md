@@ -53,7 +53,7 @@ docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace ghcr.io/
 
 | Piece | What it does |
 |---|---|
-| `agent/` | The Geology Agent — a Cline fork with a 4-layer specialist system (orchestrator → analytics / dataops / geoviz / transform / extended specialists), a citation-grounded **Report Analysis** mode, and geological guardrails |
+| `agent/` | The Geology Agent — a Cline fork with a 4-layer specialist system (orchestrator → analytics / dataops / geoviz / transform / extended specialists) and geological guardrails |
 | `mcp-server/` | [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp) (git submodule) — 50+ MCP tools: dataset inspection, cleaning, clustering, band math, raster ops, plotting, anomaly ranking |
 | `extensions/` | Helper VS Code extensions: LAS/geology file viewers, CSV viewer |
 | `docker/` + `Dockerfile` | code-server-based image that wires it all together |
@@ -81,7 +81,6 @@ overridden by the environment.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit together
 - [docs/SPECIALIST_AGENT_ARCHITECTURE.md](docs/SPECIALIST_AGENT_ARCHITECTURE.md) — the 4-layer agent system
 - [docs/DESIGN_INVARIANTS.md](docs/DESIGN_INVARIANTS.md) — non-negotiable agent design rules
-- [docs/REPORT_ANALYSIS_MODE.md](docs/REPORT_ANALYSIS_MODE.md) — citation-grounded report Q&A
 - [docs/BUILDING.md](docs/BUILDING.md) — building from source
 - [docs/CHANGES_FROM_ORIGINAL.md](docs/CHANGES_FROM_ORIGINAL.md) — what diverged from upstream Cline
 

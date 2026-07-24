@@ -47,6 +47,11 @@ These tools return compact responses and don't dump data into context:
 
 ## Layer 1 (sibling): Report Analysis variant (`report-eval`)
 
+> **Note:** this mode is currently not exposed in the UI — the "RA" chip is
+> hidden via the `ENABLED_AGENT_MODES` allowlist in
+> `agent/webview-ui/src/components/chat/ChatTextArea.tsx`. The variant, the
+> citation guard, and their invariant tests still ship and are enforced.
+
 The **"Report Analysis"** agent mode (`AgentMode === "report-analysis"`) selects a separate Layer-1 variant, `report-eval` (`variants/report-eval/config.ts`), used to answer the stage-specific Mining-evals questions over a report that has already been extracted into the workspace (`text/`, `tables/`, `images/*.description.md`, optional `analysis/findings.json`). It is a sibling of the geology variant — not a replacement; the geology agent is unchanged.
 
 | ID | Invariant | Notes |

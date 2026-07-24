@@ -16,8 +16,7 @@ extension and every release ships a prebuilt VSIX.
 The extension id is `eigenformai.geology-agent` — it installs cleanly
 alongside regular Cline with no command or view collisions.
 
-What works out of the box: chat, the geology prompt variants, Report Analysis
-mode (citation-grounded Q&A over files in your workspace), and everything
+What works out of the box: chat, the geology prompt variants, and everything
 upstream Cline can do.
 
 ## Optional: the geological MCP tools

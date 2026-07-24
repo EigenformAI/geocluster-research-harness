@@ -133,12 +133,18 @@ const GEOLOGY_MODE_COLOR = "var(--vscode-charts-green, #4caf50)"
 const REPORT_MODE_COLOR = "var(--vscode-charts-purple, #b180d7)"
 const STANDARD_MODE_COLOR = "var(--vscode-focusBorder)"
 
-// The three agent modes, in display order (matches the slider positions).
-const AGENT_MODES: { mode: AgentMode; label: string; color: string }[] = [
+// All agent modes, in display order (matches the slider positions).
+const ALL_AGENT_MODES: { mode: AgentMode; label: string; color: string }[] = [
 	{ mode: "geology", label: "Geo", color: GEOLOGY_MODE_COLOR },
 	{ mode: "report-analysis", label: "RA", color: REPORT_MODE_COLOR },
 	{ mode: "standard", label: "Std", color: STANDARD_MODE_COLOR },
 ]
+
+// Modes shown in the UI. Report Analysis is hidden for now — add
+// "report-analysis" back here to re-enable the chip.
+const ENABLED_AGENT_MODES: AgentMode[] = ["geology", "standard"]
+
+const AGENT_MODES = ALL_AGENT_MODES.filter(({ mode }) => ENABLED_AGENT_MODES.includes(mode))
 
 const AgentModeSlider = styled.div.withConfig({
 	shouldForwardProp: (prop) => !["modeIndex", "sliderColor"].includes(prop),
@@ -1138,6 +1144,15 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 			},
 			[agentMode],
 		)
+
+		// Persisted state may hold a mode that is no longer exposed in the UI
+		// (e.g. "report-analysis" selected before it was hidden) — snap back to
+		// the first enabled mode so the visible switch matches the active prompt.
+		useEffect(() => {
+			if (agentMode && !ENABLED_AGENT_MODES.includes(agentMode)) {
+				setAgentMode(ENABLED_AGENT_MODES[0])
+			}
+		}, [agentMode, setAgentMode])
 
 		const handleContextButtonClick = useCallback(() => {
 			// Focus the textarea first
