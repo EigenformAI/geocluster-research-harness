@@ -1,10 +1,14 @@
 # Geocluster Research Harness
 
-A browser IDE with a **geology-specialized AI research agent** built in. Point
-it at geochemistry tables, well logs, rasters, and technical reports, and ask
-it to inspect, cluster, map, rank anomalies, and answer questions grounded in
-your documents — with the analysis running through a bundled geological MCP
-server (50+ tools) and a multi-layer specialist agent system.
+Exploration geoscience runs on messy tabular and spatial data: assay tables with
+detection limits, well logs, magnetic surveys, NI 43-101 reports. Hand that to a
+general AI assistant and it does not know the conventions, and will invent a
+grade or a coordinate as readily as read one. Geocluster Research Harness is a
+self-contained **browser IDE** that closes the gap: a **geology-specialized
+research agent**, a bundled **50-tool geological MCP server** that runs the
+actual analysis, and viewers for LAS and CSV, all in one Docker image. Open
+`localhost:3000`, point it at your data, and ask it to inspect, clean, cluster,
+map, rank anomalies, or answer questions grounded in your documents.
 
 Built on [Cline](https://github.com/cline/cline) (Apache-2.0, fork of v3.56.0),
 [code-server](https://github.com/coder/code-server), and
@@ -93,7 +97,27 @@ built on top of the upstream base. It is renamed (`eigenformai.geology-agent`)
 so it can be installed next to the real Cline, and this project is not
 affiliated with or endorsed by the Cline team. See [NOTICE](NOTICE).
 
+## FAQ
+
+**Does my geology data leave my machine?**
+The IDE, the MCP tools, and your files all run locally in Docker. The only thing that leaves is what the agent sends to the model provider you pick: its prompts and whatever tool output it decides to include in the conversation. Choose a provider whose data policy you are comfortable with, or point it at a local model (Ollama is in the code, enabled with a one-line allowlist).
+
+**Do I need an API key?**
+Yes, for the model. Pick a provider in the setup screen (OpenRouter, Anthropic, ChatGPT Subscription, or others via a one-line allowlist) and paste a key, or pass `OPENROUTER_API_KEY` to skip that screen.
+
+**How is the agent different from plain Cline?**
+It is a fork of Cline v3.56.0 with geology prompt variants, a 4-layer specialist dispatch system, report grounding, and geological guardrails. It is renamed (`eigenformai.geology-agent`) so it installs alongside the real Cline. See [docs/CHANGES_FROM_ORIGINAL.md](docs/CHANGES_FROM_ORIGINAL.md).
+
+**What does the agent actually run?**
+The bundled [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp) server: 50+ tools for dataset inspection and cleaning, spatial operations, clustering, anomaly ranking, band math, and plotting. The agent composes those tools instead of writing throwaway scripts.
+
+**Can I host it for my team?**
+Not as shipped. The IDE has no authentication. Put it behind a reverse proxy that handles auth and never expose port 3000 directly.
+
+**Is it affiliated with Cline or Microsoft?**
+No. It is an independent Apache-2.0 fork, not endorsed by the Cline team. VS Code and code-server are MIT and downloaded at image build time. See [NOTICE](NOTICE).
+
 ## License
 
-[Apache-2.0](LICENSE). Portions derived from Cline, © Cline Bot Inc. —
-see [NOTICE](NOTICE) and [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
+[Apache-2.0](LICENSE). Portions derived from Cline, © Cline Bot Inc.
+See [NOTICE](NOTICE) and [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
