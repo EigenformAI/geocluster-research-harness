@@ -20,8 +20,9 @@ image) and what each repo component contributes.
 │                                        MCP server (FastMCP)    │
 │                                        50+ geological tools    │
 │                                                │               │
-│                              /workspace/default (volume)       │
-│                              seeded from sample-workspace/     │
+│                              /workspace/<project>/ (volume)    │
+│                              one folder per project; picker    │
+│                              at :3000/, defaults/ = sample     │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -30,8 +31,11 @@ image) and what each repo component contributes.
   starts code-server behind the local proxy. The container's only required
   external traffic is the agent's LLM API calls.
 - **ide-proxy.js**: forwards :3000 → :3001, serves `/healthz` (healthy only
-  when code-server responds), and passes WebSocket upgrades through with the
-  original Host header (code-server's CSRF check requires it).
+  when code-server responds), passes WebSocket upgrades through with the
+  original Host header (code-server's CSRF check requires it), and serves a
+  project picker on bare `/` that links to each folder under `/workspace` via
+  code-server's native `?folder=` param. The picker's form (`POST
+  /api/projects`) creates a new project folder and redirects into it.
 - **navigator shim + patches**: code-server 4.109 traps `globalThis.navigator`
   in the extension host, which breaks dependencies (Anthropic SDK, Zod) at
   module load. The Dockerfile sed-patches the trap out and preloads

@@ -16,8 +16,8 @@
 
 set -e
 
-PROJECT_ID="${PROJECT_ID:-default}"
-WORKSPACE_DIR="/workspace/${PROJECT_ID}"
+WORKSPACE_DIR="/workspace"
+DEFAULTS_DIR="$WORKSPACE_DIR/defaults"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -101,29 +101,63 @@ start_mcp_server() {
 }
 
 # =============================================================================
+# Align theia's UID/GID with the host (PUID/PGID)
+# =============================================================================
+# We use bind mount to the host filesystem, so `chown -R theia:theia
+# /workspace` below normally leaves those files owned by whatever UID 'theia'
+# got at image build time — not the host user. Set PUID/PGID (see
+# docker-compose.yml) to make files created in the container show up as owned
+# by you on the host instead.
+align_theia_uid_gid() {
+    if [ -z "${PUID:-}" ] && [ -z "${PGID:-}" ]; then
+        return 0
+    fi
+
+    if [ -n "${PGID:-}" ] && [ "$(id -g theia)" != "$PGID" ]; then
+        log "Aligning theia's group to PGID=$PGID"
+        groupmod -o -g "$PGID" theia
+    fi
+    if [ -n "${PUID:-}" ] && [ "$(id -u theia)" != "$PUID" ]; then
+        log "Aligning theia's user to PUID=$PUID"
+        usermod -o -u "$PUID" theia
+    fi
+
+    chown -R theia:theia /home/theia /var/log/theia
+}
+
+# =============================================================================
 # Main
 # =============================================================================
 main() {
     log "========================================="
     log "Geocluster Research Harness starting (code-server)"
-    log "Project ID: $PROJECT_ID"
     log "Running as: $(whoami) (UID: $(id -u))"
     log "========================================="
+
+    align_theia_uid_gid
 
     # Workspace (owned by theia, created by root)
     mkdir -p "$WORKSPACE_DIR"
     chown -R theia:theia /workspace
 
-    # Seed an empty workspace with the sample project
-    # (stored outside /workspace/ because the volume mount hides image contents)
-    if [ -z "$(ls -A "$WORKSPACE_DIR" 2>/dev/null)" ]; then
-        log "Seeding empty workspace with the sample project..."
-        if [ -d "/opt/seed-data" ] && [ -n "$(ls -A /opt/seed-data 2>/dev/null)" ]; then
-            cp -a /opt/seed-data/. "$WORKSPACE_DIR/"
-            chown -R theia:theia "$WORKSPACE_DIR"
-            log "Sample project copied into workspace"
-        fi
+    # Seed the sample geology project as a self-contained project folder
+    # (defaults/), same shape as any project a user drops in alongside it —
+    # including its own .clinerules/.vscode, since Cline only reads those
+    # from the root of whichever project folder is opened.
+    if [ ! -e "$DEFAULTS_DIR" ] && [ -d /opt/seed-data ] && [ -n "$(ls -A /opt/seed-data 2>/dev/null)" ]; then
+        mkdir -p "$DEFAULTS_DIR"
+        cp -a /opt/seed-data/. "$DEFAULTS_DIR/"
+        log "Seeded sample project into $DEFAULTS_DIR"
     fi
+
+    # Seed the top-level workspace README (explains the multi-project layout
+    # and the picker landing page), if not already present.
+    if [ ! -e "$WORKSPACE_DIR/README.md" ] && [ -f /opt/seed-root-readme/README.md ]; then
+        cp /opt/seed-root-readme/README.md "$WORKSPACE_DIR/README.md"
+        log "Seeded workspace README"
+    fi
+
+    chown -R theia:theia "$WORKSPACE_DIR"
 
     log "Workspace ready: $WORKSPACE_DIR"
 

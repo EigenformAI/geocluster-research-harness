@@ -6,9 +6,10 @@ general AI assistant and it does not know the conventions, and will invent a
 grade or a coordinate as readily as read one. Geocluster Research Harness is a
 self-contained **browser IDE** that closes the gap: a **geology-specialized
 research agent**, a bundled **50-tool geological MCP server** that runs the
-actual analysis, and viewers for LAS and CSV, all in one Docker image. Open
-`localhost:3000`, point it at your data, and ask it to inspect, clean, cluster,
-map, rank anomalies, or answer questions grounded in your documents.
+actual analysis, and viewers for LAS and CSV, all in one Docker image. Drop
+your data into a project folder, open `localhost:3000`, and ask it to inspect,
+clean, cluster, map, rank anomalies, or answer questions grounded in your
+documents.
 
 Built on [Cline](https://github.com/cline/cline) (Apache-2.0, fork of v3.56.0),
 [code-server](https://github.com/coder/code-server), and
@@ -28,10 +29,16 @@ docker compose up --build
 
 The first build compiles everything from source (agent extension, CLI, MCP
 server) and takes a while — later builds are cached and fast. When it's up,
-open **http://localhost:3000**: the workspace comes pre-loaded with a
-synthetic geology project. Open the Geology Agent panel in the right sidebar,
-pick a model provider, paste your API key, and ask it to analyze the sample
-data.
+open **http://localhost:3000**: you'll land on a project picker. Click
+`defaults` to open a pre-loaded synthetic geology project, or create a new
+one from that same page. Once you're inside a project, open the Geology
+Agent panel in the right sidebar, pick a model provider, paste your API key,
+and ask it to analyze the data.
+
+Each project is just a folder under `copy-your-files-here/` on your machine
+(a bind mount, not a Docker volume) — `copy-your-files-here/defaults/` is the
+sample project, and anything else you drop in there (or create from the
+picker page) shows up as its own project the next time you load the page.
 
 Already have an [OpenRouter](https://openrouter.ai) key? Skip the setup screen:
 
@@ -43,11 +50,16 @@ OPENROUTER_API_KEY=sk-or-... docker compose up --build
 
 ### Prebuilt image
 
-Once releases are published, the no-clone path is:
+Once releases are published, skip building from source — just pull the
+compose file and let it use the `image:` it already points at
+(`ghcr.io/eigenformai/geocluster-research-harness:latest`):
 
 ```bash
-docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace ghcr.io/eigenformai/geocluster-research-harness
+curl -O https://raw.githubusercontent.com/EigenformAI/geocluster-research-harness/main/docker-compose.yml
+docker compose up
 ```
+
+Same `copy-your-files-here/` layout as the build-from-source path above.
 
 > **Security note:** the IDE itself has no authentication (`--auth none`
 > behind a localhost port). Never expose port 3000 to the internet; if you
@@ -61,7 +73,7 @@ docker run -d -p 127.0.0.1:3000:3000 -v geocluster-workspace:/workspace ghcr.io/
 | `mcp-server/` | [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp) (git submodule) — 50+ MCP tools: dataset inspection, cleaning, clustering, band math, raster ops, plotting, anomaly ranking |
 | `extensions/` | Helper VS Code extensions: LAS/geology file viewers, CSV viewer |
 | `docker/` + `Dockerfile` | code-server-based image that wires it all together |
-| `sample-workspace/` | Synthetic demo project seeded on first run |
+| `sample-workspace/` | Synthetic demo project, seeded as the `defaults/` project folder on first run |
 
 ## Use it in your own VS Code
 

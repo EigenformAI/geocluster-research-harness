@@ -88,7 +88,7 @@ RUN apt-get update && apt-get install -y \
 # docker/navigator-shim.js are validated against EXACTLY this version. Bumping
 # CODE_SERVER_VERSION requires re-validating all three.
 ARG CODE_SERVER_VERSION=4.109.2
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 RUN curl -fsSL https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${TARGETARCH}.tar.gz \
     | tar -xz -C /opt && \
     ln -s /opt/code-server-${CODE_SERVER_VERSION}-linux-${TARGETARCH}/bin/code-server /usr/local/bin/code-server
@@ -178,8 +178,12 @@ WORKDIR /home/theia
 
 # ---- Seed data (sample project) ----
 # Stored outside /workspace/ because the volume mount hides image contents;
-# entrypoint.sh copies it into the workspace on first start.
+# entrypoint.sh splits this on first start: .clinerules/.vscode go to the
+# workspace root (Cline only reads .clinerules from the opened root, not
+# subfolders), everything else goes to workspace/defaults/.
 COPY --chown=theia:theia sample-workspace/ /opt/seed-data/
+COPY --chown=theia:theia docker/workspace-readme.md /opt/seed-root-readme/README.md
+COPY --chown=theia:theia docker/new-project-readme.md /opt/seed-new-project-readme/README.md
 
 # ---- Entrypoint + proxy ----
 COPY --chown=theia:theia docker/ide-proxy.js /home/theia/ide-proxy.js
