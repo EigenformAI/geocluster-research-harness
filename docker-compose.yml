@@ -29,8 +29,10 @@ services:
       # Optional — pre-configures the OpenRouter provider. Leave unset to pick
       # any provider (Anthropic, OpenAI, Ollama, …) in the welcome screen.
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
     volumes:
-      - workspace:/workspace
+      - ./copy-your-files-here:/workspace
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
@@ -38,6 +40,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-
-volumes:
-  workspace:
