@@ -66,17 +66,36 @@ jobs:
           cd extensions/csv-viewer && npm ci && npm run package
 
   docker:
-    name: Docker build smoke (amd64)
-    runs-on: ubuntu-latest
+    name: Docker compose smoke (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: docker/setup-buildx-action@v3
-      - name: Build image (no push)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+
+      - name: docker compose up --build
+        run: docker compose up --build -d
+
+      - name: Wait for healthy
+        run: |
+          timeout 300 bash -c '
+            until [ "$(docker inspect -f "{{.State.Health.Status}}" geocluster-research-harness)" = "healthy" ]; do
+              sleep 5
+            done
+          '
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

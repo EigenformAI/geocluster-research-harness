@@ -139,9 +139,10 @@ COPY --from=builder --chown=theia:theia /build/geology-agent.vsix /tmp/extension
 COPY --from=builder --chown=theia:theia /build/geology-formats.vsix /tmp/extensions/
 COPY --from=builder --chown=theia:theia /build/csv-viewer.vsix /tmp/extensions/
 USER theia
-RUN for vsix in /tmp/extensions/*.vsix; do \
+RUN set -e; \
+    for vsix in /tmp/extensions/*.vsix; do \
         echo "Installing extension: $vsix"; \
-        code-server --install-extension "$vsix" || true; \
+        code-server --install-extension "$vsix"; \
     done && rm -rf /tmp/extensions
 
 # Verify the agent installed
