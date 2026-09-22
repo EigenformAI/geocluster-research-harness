@@ -21,6 +21,8 @@ docker compose up --build
 
 On macOS/Linux, `./run.sh` (or double-click `run.command` in Finder) does all of the above for you: checks Docker is installed and running, fetches the submodule if needed, builds, waits until it's ready, and opens the browser. `./stop.sh` (or `stop.command`) stops it again.
 
+On Windows, double-click `run.bat` (same checks, same behavior) and `stop.bat` to stop it.
+
 The first build compiles everything from source (agent extension, CLI, MCP server) and takes a while — later builds are cached and fast. When it's up, open **http://localhost:3000**: you'll land on a project picker. Click `defaults` to open a pre-loaded synthetic geology project, or create a new one from that same page. Once you're inside a project, open the Geology Agent panel in the right sidebar, pick a model provider, paste your API key, and ask it to analyze the data.
 
 Each project is just a folder under `copy-your-files-here/` on your machine (a bind mount, not a Docker volume) — `copy-your-files-here/defaults/` is the sample project, and anything else you drop in there (or create from the picker page) shows up as its own project the next time you load the page.
