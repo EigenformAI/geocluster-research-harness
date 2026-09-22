@@ -67,31 +67,24 @@ jobs:
 
   docker:
     name: Docker compose smoke (${{ matrix.platform }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64]
-    env:
-      DOCKER_DEFAULT_PLATFORM: ${{ matrix.platform }}
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - uses: docker/setup-qemu-action@v3
-        if: matrix.platform == 'linux/arm64'
-
-      - name: docker compose build
-        if: matrix.platform == 'linux/arm64'
-        run: docker compose build
-
       - name: docker compose up --build
-        if: matrix.platform == 'linux/amd64'
         run: docker compose up --build -d
 
       - name: Wait for healthy
-        if: matrix.platform == 'linux/amd64'
         run: |
           timeout 300 bash -c '
             until [ "$(docker inspect -f "{{.State.Health.Status}}" geocluster-research-harness)" = "healthy" ]; do
@@ -100,9 +93,9 @@ jobs:
           '
 
       - name: Show logs on failure
-        if: failure() && matrix.platform == 'linux/amd64'
+        if: failure()
         run: docker compose logs
 
       - name: Tear down
-        if: always() && matrix.platform == 'linux/amd64'
+        if: always()
         run: docker compose down -v
