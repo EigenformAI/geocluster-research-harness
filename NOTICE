@@ -1,15 +1,19 @@
-Geocluster Research Harness
+GeoCluster runtime
 Copyright 2026 EigenformAI
 
-This product includes software developed by third parties:
+EigenformAI-owned original code and documentation in this repository are licensed
+under the Apache License, Version 2.0. The complete license is in LICENSE.
 
-- Cline (https://github.com/cline/cline), Copyright Cline Bot Inc.,
-  licensed under the Apache License 2.0. The `agent/` directory is a fork of
-  Cline v3.56.0 with geology-specific modifications; the upstream LICENSE is
-  retained at agent/LICENSE.
+Third-party code and datasets retain their own copyright notices and terms.
+See ThirdPartyNotices.txt for the retained Cline-derived material and OpenCode,
+runtime/lib/gis-grids/LICENSE.txt for projection grids, and
+runtime/demo-bundles/wattle-creek/v1/LICENSE.txt for the CC0 sample assets.
 
-- code-server (https://github.com/coder/code-server), MIT License, and
-  Visual Studio Code — Open Source (https://github.com/microsoft/vscode),
-  MIT License. Downloaded at image build time.
+The geocluster-mcp Git submodule and the preprocessing service carry separate
+Apache-2.0 licenses. The MCP's license accompanies its source in
+geocluster-mcp/LICENSE.
 
-See ThirdPartyNotices.txt for the full set of third-party attributions.
+The preprocessing license accompanies its source bundle and is installed at
+/opt/geocluster-preprocessing/legal/LICENSE in the runtime image. The original
+license is also available at
+https://github.com/EigenformAI/geocluster-data-preprocessing-service/blob/main/LICENSE.

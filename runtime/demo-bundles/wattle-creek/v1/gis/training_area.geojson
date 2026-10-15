@@ -1,0 +1,39 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Wattle Creek synthetic training area",
+        "purpose": "Invented training outline, not a legal tenement"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.69721996,
+              -32.12998829
+            ],
+            [
+              121.72597766,
+              -32.12374379
+            ],
+            [
+              121.71287323,
+              -32.08004474
+            ],
+            [
+              121.68412855,
+              -32.08628664
+            ],
+            [
+              121.69721996,
+              -32.12998829
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

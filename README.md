@@ -1,108 +1,187 @@
-# Geocluster Research Harness
+# GeoCluster Research Harness
 
-Exploration geoscience runs on messy tabular and spatial data: assay tables with detection limits, well logs, magnetic surveys, NI 43-101 reports. Hand that to a general AI assistant and it does not know the conventions, and will invent a grade or a coordinate as readily as read one. Geocluster Research Harness is a self-contained **browser IDE** that closes the gap: a **geology-specialized research agent**, a bundled **50-tool geological MCP server** that runs the actual analysis, and viewers for LAS and CSV, all in one Docker image. Drop your data into a project folder, open `localhost:3000`, and ask it to inspect, clean, cluster, map, rank anomalies, or answer questions grounded in your documents.
+Exploration geoscience runs on messy tabular and spatial data: assay tables with
+detection limits, well logs, magnetic surveys, NI 43-101 reports. GeoCluster
+Research Harness brings a geology-specialized research agent and a bundled
+geological MCP server into one Docker image. Add your data to a project folder
+and ask it to inspect, clean, cluster, rank anomalies, or answer questions grounded
+in your documents.
 
-Built on [Cline](https://github.com/cline/cline) (Apache-2.0, fork of v3.56.0),
-[code-server](https://github.com/coder/code-server), and
-[geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp).
+Built on [OpenCode](https://opencode.ai) and
+[geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp). This open-source
+release runs through the OpenCode terminal user interface (TUI), with your own
+model provider. Keep input files and saved results together in a project
+workspace you control.
 
-## Quick start — build and run (Docker)
+## What you can do
 
-Requires [Docker](https://docs.docker.com/get-docker/) (Docker Desktop on Windows/macOS). Works the same in bash, PowerShell, and cmd:
+- Inspect and clean assay tables, check missing values, and compare drillhole
+  inputs without silently treating below-detection values as zero.
+- Cluster geochemical data, rank anomalies, and save tables and plots for review.
+- Ask questions about technical reports, including NI 43-101 reports, with
+  page-labelled PDF text. Optional document processing extracts retained tables
+  and other report content for further analysis.
 
-```bash
-git clone https://github.com/EigenformAI/geocluster-research-harness.git
-cd geocluster-research-harness
-git submodule update --init
-docker compose up --build
+The geology prompts require source citations for data-derived claims and separate
+measurements from interpretation. These are agent instructions, not a guarantee
+of correctness. Review the cited evidence before using a result.
+
+## Before you start
+
+You need:
+
+- Docker running, with Buildx installed.
+- Git, Python 3, and an interactive terminal.
+- A provider account or API key supported by OpenCode. Connect it inside the TUI.
+- A processor source checkout supplied separately by your installation provider.
+  The first build requires it even if you do not use document processing.
+
+The container targets Linux x64. You do not need to install OpenCode on your host.
+
+## Start GeoCluster
+
+Clone the repository and build the image with your processor source:
+
+```sh
+git clone https://github.com/EigenformAI/geocluster-ai-ide-BE.git
+cd geocluster-ai-ide-BE
+git submodule update --init --recursive
+PREPROCESSING_SOURCE_DIR=/absolute/path/to/processor-source \
+	IMAGE_TAG=local bash scripts/build-docker.sh
+./scripts/run-runtime-tui.sh --image geocluster-runtime:local
 ```
 
-> **Don't use GitHub's "Download ZIP" button** — it leaves `mcp-server/` empty (that folder is a git submodule, and a ZIP download can't include it), and the build will fail. Use `git clone` as shown above.
+The launcher starts the native profile with the pinned OpenCode TUI, local file
+service, and geology tools. Run `/connect` to connect your provider, then `/models`
+to select a model. No GeoCluster model proxy, project model token, machine
+credential, or backend activity endpoint is required. Startup does not perform
+paid inference.
 
-On macOS/Linux, `./run.sh` (or double-click `run.command` in Finder) does all of the above for you: checks Docker is installed and running, fetches the submodule if needed, builds, waits until it's ready, and opens the browser. `./stop.sh` (or `stop.command`) stops it again.
+Use Git rather than GitHub's Download ZIP option. The build needs the
+`geocluster-mcp` submodule, which a repository ZIP does not include.
 
-On Windows, double-click `run.bat` (same checks, same behavior) and `stop.bat` to stop it.
+Provider connections and conversation state persist inside the retained container
+workspace. Host OpenCode accounts and credentials are not copied or mounted
+automatically. Run `./scripts/run-runtime-tui.sh --help` for image, workspace, and
+explicit provider-environment options. `scripts/tui.sh` delegates to this launcher;
+it accepts the same launcher options.
 
-The first build compiles everything from source (agent extension, CLI, MCP server) and takes a while — later builds are cached and fast. When it's up, open **http://localhost:3000**: you'll land on a project picker. Click `defaults` to open a pre-loaded synthetic geology project, or create a new one from that same page. Once you're inside a project, open the Geology Agent panel in the right sidebar, pick a model provider, paste your API key, and ask it to analyze the data.
+Native startup publishes no host ports.
+Some provider login methods show a URL or device code. Methods that require a
+container loopback callback may need extra operator configuration.
 
-Each project is just a folder under `copy-your-files-here/` on your machine (a bind mount, not a Docker volume) — `copy-your-files-here/defaults/` is the sample project, and anything else you drop in there (or create from the picker page) shows up as its own project the next time you load the page.
+The processor source remains a full-image build prerequisite. Integrated document
+extraction is optional. For [native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md),
+restart with `--processing-model provider/model[#variant]`. Processing reuses the
+native OpenCode connections by default while keeping its model selection separate
+from the conversation. Ordinary startup does not enable it.
 
-Already have an [OpenRouter](https://openrouter.ai) key? Skip the setup screen:
+## Analyze a file
 
-```bash
-OPENROUTER_API_KEY=sk-or-... docker compose up --build
+For a new bind-mounted workspace on rootful Linux Docker, provision a root-owned
+volume directory. Keep it non-writable by other users; the runtime stores private
+state beside the project. Use a new directory, not an existing home or project
+root. Do not change ownership of another profile's retained state. Create the
+project directory as your host user, then copy the CSV before starting the TUI:
+
+```sh
+sudo install -d -o root -g root -m 0755 native-workspace
+sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 native-workspace/default
+cp /absolute/path/to/assays.csv native-workspace/default/assays.csv
+./scripts/run-runtime-tui.sh --image geocluster-runtime:local \
+	--workspace-root "$PWD/native-workspace" --project default
 ```
 
-(PowerShell: `$env:OPENROUTER_API_KEY="sk-or-..."; docker compose up --build`)
+On Docker Desktop, rootless Docker, or remote Docker, use a Docker-managed
+workspace volume instead of these host-ownership commands.
 
-### Prebuilt image
+Reuse the same workspace options on later starts. Without a workspace option,
+the helper uses the Docker volume `geocluster-native-workspace` and project
+`default`. Inside the container, files are under `/workspace/<PROJECT_ID>/`.
+Existing inputs need permissions that let engine UID 999 and file UID 998 read
+them. The native helper does not automatically configure host file sharing.
 
-Once releases are published, skip building from source — just pull the
-compose file and let it use the `image:` it already points at
-(`ghcr.io/eigenformai/geocluster-research-harness:latest`):
+In the TUI, ask:
 
-```bash
-curl -O https://raw.githubusercontent.com/EigenformAI/geocluster-research-harness/main/docker-compose.yml
-docker compose up
+> Summarize the copper assays in assays.csv and save copper-summary.csv in this
+> session's results folder.
+
+Find the result inside your project directory under:
+
+```text
+runs/<session-id>/results/copper-summary.csv
 ```
 
-Same `copy-your-files-here/` layout as the build-from-source path above.
+Check the agent's response for the output path. If the TUI asks for permission
+to write a file, approve or deny the request there.
 
-> **Security note:** the IDE itself has no authentication (`--auth none`
-> behind a localhost port). Never expose port 3000 to the internet; if you
-> must host it, put it behind a reverse proxy that handles auth.
+Other questions to try with your own files:
 
-## What's inside
+> Check drilling-assays.csv against collars.csv by hole_id. Save unmatched
+> intervals and a QA report. Preserve reported values and do not invent collars.
 
-| Piece | What it does |
-|---|---|
-| `agent/` | The Geology Agent — a Cline fork with a 4-layer specialist system (orchestrator → analytics / dataops / geoviz / transform / extended specialists) and geological guardrails |
-| `mcp-server/` | [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp) (git submodule) — 50+ MCP tools: dataset inspection, cleaning, clustering, band math, raster ops, plotting, anomaly ranking |
-| `extensions/` | Helper VS Code extensions: LAS/geology file viewers, CSV viewer |
-| `docker/` + `Dockerfile` | code-server-based image that wires it all together |
-| `sample-workspace/` | Synthetic demo project, seeded as the `defaults/` project folder on first run |
+> Summarize the sampling methods in report.pdf. Cite the PDF pages and distinguish
+> reported findings from your interpretation.
 
-## Use it in your own VS Code
+> Cluster the selected geochemical columns in assays.csv. Explain the method and
+> scaling choice, save the assignments, and leave the input unchanged.
 
-Every release ships a prebuilt `geology-agent-<version>.vsix` — installable in desktop VS Code (≥ 1.109) alongside regular Cline; the extension is renamed so the two don't collide. The MCP server and specialist CLI are optional add-ons for the full experience. See [docs/VSIX_INSTALL.md](docs/VSIX_INSTALL.md).
+These filenames are examples. Replace them with files in your project.
 
-## Providers
+## Work with local files
 
-The setup screen currently surfaces **OpenRouter**, **Anthropic**, and **ChatGPT Subscription**. Additional providers (Gemini, Bedrock, Ollama, DeepSeek, …) exist in the code and can be enabled via a one-line allowlist in `agent/webview-ui/src/components/settings/ApiOptions.tsx`. `OPENROUTER_API_KEY` is only a convenience — if it's unset you choose a provider in the welcome screen, and a provider chosen in the UI is never overridden by the environment.
+Keep the retained workspace to preserve files, conversation history, and provider
+connections. Native engine state has mode `0700` and is outside the project
+directory. Whole-volume backups can contain provider secrets and
+refresh tokens. Protect those backups like credentials.
+
+Use ordinary OpenCode user configuration for provider settings and model defaults.
+Native mode also discovers project configuration. Project plugins and configuration
+can execute code as the engine identity. Trust them before opening a project.
+The state permissions do not hide credentials from that identity's shell tools;
+native mode is not a credential sandbox. Agent tool permissions guide delegation;
+they do not sandbox code executed by an agent. See the
+[security limits](docs/DESIGN_INVARIANTS.md#security-limits) when choosing where
+to run the harness.
+
+The retained volume has one lifecycle owner and a profile marker. Concurrent
+owners and reuse by another profile are rejected. To change profiles, copy only
+ordinary project data and saved results from `/workspace/<PROJECT_ID>/` to a new
+volume's project directory. Never copy the enclosing `/workspace` root,
+`.runtime`, or `.ide-state`. This does not transfer sessions or credentials.
+
+### Does my data leave the machine?
+
+In a local Docker installation, the runtime, workspace, and bundled analysis tools
+run on your Docker host. Model requests go to the provider you connect. They can
+include prompts, file content, and tool results. Agent tools can also make network
+requests. Running the container locally does not make inference offline or prevent
+data disclosure. Choose a provider and deployment appropriate for your data.
+
+## Continue, update, or stop
+
+```sh
+./scripts/run-runtime-tui.sh --image geocluster-runtime:local # Add your workspace options
+./scripts/run-runtime-tui.sh --help # Show launcher options
+```
+
+Exiting the TUI shuts down its local runtime and owned services.
+Finish pending work before exiting or rebuilding.
+After updating source, rebuild the image with the build command above.
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit together
-- [docs/SPECIALIST_AGENT_ARCHITECTURE.md](docs/SPECIALIST_AGENT_ARCHITECTURE.md) — the 4-layer agent system
-- [docs/DESIGN_INVARIANTS.md](docs/DESIGN_INVARIANTS.md) — non-negotiable agent design rules
-- [docs/BUILDING.md](docs/BUILDING.md) — building from source
-- [docs/CHANGES_FROM_ORIGINAL.md](docs/CHANGES_FROM_ORIGINAL.md) — what diverged from upstream Cline
+- [Native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md): setup,
+  processing-model selection, and recovery.
+- [Runtime configuration](ENVIRONMENT_VARIABLES.md): settings and credentials.
+- [Engine build guide](opencode/engine/README.md): build and qualify the pinned
+  OpenCode engine.
 
-## Relationship to Cline
+## Licensing
 
-The agent is a fork of [Cline](https://github.com/cline/cline) v3.56.0 (Apache-2.0), maintained as a standalone project — geology prompt variants, the specialist dispatch system, report grounding, and IDE integration are built on top of the upstream base. It is renamed (`eigenformai.geology-agent`) so it can be installed next to the real Cline, and this project is not affiliated with or endorsed by the Cline team. See [NOTICE](NOTICE).
-
-## FAQ
-
-**Does my geology data leave my machine?**
-The IDE, the MCP tools, and your files all run locally in Docker. The only thing that leaves is what the agent sends to the model provider you pick: its prompts and whatever tool output it decides to include in the conversation. Choose a provider whose data policy you are comfortable with, or point it at a local model (Ollama is in the code, enabled with a one-line allowlist).
-
-**Do I need an API key?**
-Yes, for the model. Pick a provider in the setup screen (OpenRouter, Anthropic, ChatGPT Subscription, or others via a one-line allowlist) and paste a key, or pass `OPENROUTER_API_KEY` to skip that screen.
-
-**How is the agent different from plain Cline?**
-It is a fork of Cline v3.56.0 with geology prompt variants, a 4-layer specialist dispatch system, report grounding, and geological guardrails. It is renamed (`eigenformai.geology-agent`) so it installs alongside the real Cline. See [docs/CHANGES_FROM_ORIGINAL.md](docs/CHANGES_FROM_ORIGINAL.md).
-
-**What does the agent actually run?**
-The bundled [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp) server: 50+ tools for dataset inspection and cleaning, spatial operations, clustering, anomaly ranking, band math, and plotting. The agent composes those tools instead of writing throwaway scripts.
-
-**Can I host it for my team?**
-Not as shipped. The IDE has no authentication. Put it behind a reverse proxy that handles auth and never expose port 3000 directly.
-
-**Is it affiliated with Cline or Microsoft?**
-No. It is an independent Apache-2.0 fork, not endorsed by the Cline team. VS Code and code-server are MIT and downloaded at image build time. See [NOTICE](NOTICE).
-
-## License
-
-[Apache-2.0](LICENSE). Portions derived from Cline, © Cline Bot Inc.
-See [NOTICE](NOTICE) and [ThirdPartyNotices.txt](ThirdPartyNotices.txt).
+EigenformAI-owned original code and documentation are licensed under the
+[Apache License 2.0](LICENSE). [NOTICE](NOTICE) describes the scope of that grant.
+Third-party code and datasets retain their own terms, listed in
+[ThirdPartyNotices.txt](ThirdPartyNotices.txt). The bundled
+[Wattle Creek sample](runtime/demo-bundles/wattle-creek/v1/README.md) is synthetic
+data with its own CC0 dedication.

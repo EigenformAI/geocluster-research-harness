@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/anomalyco/opencode",
+  "commit": "1fd016ef32286de9489b7b24f1029f52c49a27b3",
+  "upstreamVersion": "2.0.19",
+  "version": "2.0.19-geocluster.2",
+  "channel": "latest",
+  "target": "opencode-linux-x64",
+  "bunVersion": "1.4.2",
+  "bunImage": "oven/bun:1.4.2-debian@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73",
+  "sourceArchive": {
+    "url": "https://codeload.github.com/anomalyco/opencode/tar.gz/1fd016ef32286de9489b7b24f1029f52c49a27b3",
+    "sha256": "6bf0088eb036df98cf7d569dc259ac27daee869602ce7ba4180e5807a8aa6119"
+  },
+  "lockfileSha256": "dd67fbf0ba9cb58beda9f59faee3b423795ba0b775b02af210aaa205bf449f81",
+  "patches": [
+    { "file": "resumed-descendant-observation.patch", "sha256": "80dd5bf4d01db16addd9265df2d02f4e8efdd9264f1fe2a8c3c3bf8e8f0ad412" },
+    { "file": "persisted-effort-reconciliation.patch", "sha256": "67672b90c450ade531c99c3e652dec119e671d518f60ef0bdbbd6e2b8c48af52" }
+  ],
+  "buildArguments": ["--target=opencode-linux-x64", "--skip-install", "--skip-web-ui"],
+  "tests": ["test/acp/event-behavior.test.ts", "test/acp/event-observation-background.test.ts", "test/acp/event.test.ts", "test/acp/permission-behavior.test.ts", "test/acp/service-reconciliation.test.ts", "test/acp/service-lifecycle.test.ts", "test/acp/service-directory.test.ts", "test/acp/config-option.test.ts"]
+}

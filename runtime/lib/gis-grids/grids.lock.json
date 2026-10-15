@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "source_repository": "https://github.com/OSGeo/PROJ-data",
+  "source_commit": "cdab44864a36a9f3c3e90a36637c5d8a86e624c6",
+  "catalog_url": "https://raw.githubusercontent.com/OSGeo/PROJ-data/cdab44864a36a9f3c3e90a36637c5d8a86e624c6/files.geojson",
+  "upstream_repository": "https://github.com/icsm-au/transformation_grids",
+  "upstream_commit": "d2b26335dbc466c70334446c07463a6e95c5e115",
+  "grids": [
+    {
+      "name": "au_icsm_GDA94_GDA2020_conformal.tif",
+      "url": "https://raw.githubusercontent.com/OSGeo/PROJ-data/cdab44864a36a9f3c3e90a36637c5d8a86e624c6/au_icsm/au_icsm_GDA94_GDA2020_conformal.tif",
+      "sha256": "92b39b4898aff9e9921dce83daed4f942da0c1e714905612fa7ffdc0081dcc9c",
+      "size": 4561222,
+      "source_crs": "EPSG:4283",
+      "target_crs": "EPSG:7844",
+      "operation": "EPSG:8446",
+      "copyright": "Intergovernmental Committee on Surveying and Mapping (ICSM)",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    {
+      "name": "au_icsm_GDA94_GDA2020_conformal_and_distortion.tif",
+      "url": "https://raw.githubusercontent.com/OSGeo/PROJ-data/cdab44864a36a9f3c3e90a36637c5d8a86e624c6/au_icsm/au_icsm_GDA94_GDA2020_conformal_and_distortion.tif",
+      "sha256": "89bb9e5c55a714c8925ddc134bf4c191be8df2607b229a05efb778f5f6166ee0",
+      "size": 27272664,
+      "source_crs": "EPSG:4283",
+      "target_crs": "EPSG:7844",
+      "operation": "EPSG:8447",
+      "copyright": "Intergovernmental Committee on Surveying and Mapping (ICSM)",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/"
+    }
+  ]
+}

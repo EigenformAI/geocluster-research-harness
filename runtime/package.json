@@ -1,0 +1,43 @@
+{
+  "name": "geocluster-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Runtime gateway for GeoCluster machines: ACP bridge to one OpenCode engine (opencode acp) and the shared geocluster MCP, workspace file APIs, health, and the root access gate.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:files": "node files-server.js",
+    "start:machine": "node machine-gateway.js",
+    "build:native": "node lib/safe-fs/build.mjs && node lib/preview-launcher/build.mjs && node lib/workbook-launcher/build.mjs && node lib/gis-launcher/build.mjs",
+    "build:gis": "node lib/gis-launcher/build.mjs",
+    "test:gis": "node --test test/file-gis.test.mjs test/gis-reader.test.mjs test/file-gis-native.test.mjs test/assay.test.mjs test/assay-native.test.mjs test/gis-raster-map-native.test.mjs test/map-infrastructure.test.mjs test/file-map-views.test.mjs",
+    "build:workbook": "node lib/workbook-launcher/build.mjs",
+    "test:workbook": "node --test test/workbook-reader.test.mjs lib/workbook-launcher/*.test.mjs",
+    "test:voxels": "node --test test/voxels.test.mjs test/voxel-ingestion.test.mjs test/voxel-lifecycle.test.mjs test/voxel-admission.test.mjs test/voxel-budget.test.mjs test/voxel-indexed.test.mjs test/voxel-named-lifecycle.test.mjs test/voxel-alignment-service.test.mjs test/voxel-reconciliation.test.mjs test/voxel-wire.test.mjs test/voxel-openapi.test.mjs test/voxel-agent.test.mjs test/voxel-agent-server.test.mjs test/voxel-files.test.mjs",
+    "test:imports": "node --test test/cloud-import.test.mjs test/backend-file-adapter.test.mjs test/machine-credentials.test.mjs",
+    "test:owned-demo-seed": "node --test scripts/owned-demo-seed.test.mjs",
+    "test": "node --test test/*.test.cjs test/*.test.mjs",
+    "test:relay": "node --test test/agent-fencing.test.mjs test/files.test.mjs test/files-openapi.test.mjs test/files-processing-server.test.mjs test/file-workbook-relay.test.mjs test/gate.test.cjs test/machine-credentials.test.mjs test/runtime-boundary.test.mjs",
+    "test:machine-root": "docker run --rm --network none --entrypoint node --mount type=bind,src=\"$PWD\",dst=/runtime,readonly ${RUNTIME_TEST_IMAGE:-node:20-slim} /runtime/test/machine-root.mjs",
+    "test:files": "node --test test/files.test.mjs test/files-openapi.test.mjs test/files-processing*.test.mjs test/document-processing.test.mjs test/preprocessing-client.test.mjs test/upload-processing.test.mjs test/file-*.test.mjs test/workspace-files.test.mjs test/safe-fs.test.mjs test/cloud-import.test.mjs test/backend-file-adapter.test.mjs",
+    "test:engine": "node --test test/engine/*.test.mjs",
+    "test:image:processor": "node test/image/processor-test.mjs"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.13.1",
+    "better-sqlite3": "11.10.0",
+    "chokidar": "^4.0.0",
+    "frizbee": "0.13.0",
+    "saxes": "6.0.0",
+    "ws": "^8.18.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

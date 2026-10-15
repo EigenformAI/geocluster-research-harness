@@ -1,0 +1,1603 @@
+{
+  "plugins": [
+    "-opencode.tool.patch",
+    "./plugins/account-attribution",
+    "./plugins/pdf-read",
+    "./plugins/result-protocol",
+    "./plugins/retry-policy",
+    "./plugins/run-dir",
+    "./plugins/tool-shape",
+    "./plugins/voxel-agent"
+  ],
+  "default_agent": "geology",
+  "share": "disabled",
+  "update": "disable",
+  "snapshots": false,
+  "lsp": false,
+  "formatter": false,
+  "websearch": false,
+  "experimental": {
+    "subagent_depth": 3,
+    "policies": [
+      {
+        "action": "provider.use",
+        "resource": "*",
+        "effect": "deny"
+      },
+      {
+        "action": "provider.use",
+        "resource": "proxy",
+        "effect": "allow"
+      }
+    ]
+  },
+  "agents": {
+    "build": {
+      "disabled": true
+    },
+    "plan": {
+      "disabled": true
+    },
+    "general": {
+      "disabled": true
+    },
+    "explore": {
+      "disabled": true
+    },
+    "geology": {
+      "description": "Layer 1 Geology Agent: user-facing, read-only, delegates analysis to the orchestrator.",
+      "mode": "primary",
+      "system": "{file:./prompts/geology.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.csv",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.CSV",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.tsv",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.TSV",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.xlsx",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.XLSX",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.xls",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.XLS",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.parquet",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.PARQUET",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.las",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.LAS",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_list_files",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_check_missing",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_summarize_provenance",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "orchestrator",
+          "effect": "allow"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "report-analysis": {
+      "description": "Report Analysis mode: answers one Mining-evals question over an extracted report; read-only like Layer 1.",
+      "mode": "primary",
+      "system": "{file:./prompts/report-analysis.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_list_files",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_check_missing",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_summarize_provenance",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "orchestrator",
+          "effect": "allow"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "standard": {
+      "description": "Standard mode: OpenCode's coding prompt outside the specialist system; canonical and legacy voxel tools remain denied.",
+      "mode": "primary",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "browser*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "opencode_session_move",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "question",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_resolve",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_inspect",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_prepare",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_validate",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_submit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_status",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_add_box",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_add_line",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_add_point",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_export_bundle",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_get_grid",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_history",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_init_grid",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_list_layers",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_probe_region",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_set_layer_array",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "geocluster_voxel_upsert_geometry",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "orchestrator": {
+      "description": "Layer 2 Analysis Orchestrator: plans and dispatches specialists; never touches data itself.",
+      "mode": "subagent",
+      "system": "{file:./prompts/orchestrator.md}",
+      "steps": 60,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.csv",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.CSV",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.tsv",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.TSV",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.xlsx",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.XLSX",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.xls",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.XLS",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.parquet",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.PARQUET",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.las",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.LAS",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "subagent",
+          "resource": "dataops",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "transform",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "analytics",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "geoviz",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "voxel",
+          "effect": "allow"
+        },
+        {
+          "action": "subagent",
+          "resource": "extended",
+          "effect": "allow"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "dataops": {
+      "description": "Layer 3 DataOps specialist: inspects, validates, diagnoses cleaning issues, queries and verifies claims on datasets.",
+      "mode": "subagent",
+      "system": "{file:./prompts/dataops.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_check_missing",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_detect_cleaning_issues",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_inspect_dataset",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_inspect_raster",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_inspect_specific_columns",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_query_data",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_select_bands",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_select_columns",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_validate_geology",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_verify_claims",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip3 install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*-m pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*conda install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*mamba install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt-get*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm i *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*yarn add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*sudo*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "transform": {
+      "description": "Layer 3 Transform specialist: normalise, reshape, merge, filter, clean; tool-first, scripts as fallback.",
+      "mode": "subagent",
+      "system": "{file:./prompts/transform.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_aggregate",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_band_math",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_compute_gradient",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_compute_ratios",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_convert_dtype",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_filter_rows",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_fix_decimals",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_log_transform",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_melt",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_merge_datasets",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_normalize",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_parse_detection_limits",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_pivot",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_remove_duplicates",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_select_bands",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_select_columns",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_smooth",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_standardize",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_standardize_terms",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_texture_features",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip3 install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*-m pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*conda install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*mamba install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt-get*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm i *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*yarn add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*sudo*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "analytics": {
+      "description": "Layer 3 Analytics specialist: statistics, clustering, anomalies, dimensionality reduction, ranking.",
+      "mode": "subagent",
+      "system": "{file:./prompts/analytics.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_aggregate",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_cluster",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_compute_anomaly",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_rank_by_metric",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_reduce_dimensions",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_threshold",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip3 install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*-m pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*conda install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*mamba install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt-get*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm i *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*yarn add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*sudo*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "geoviz": {
+      "description": "Layer 3 GeoViz specialist: maps, scatter plots, histograms, cluster plots.",
+      "mode": "subagent",
+      "system": "{file:./prompts/geoviz.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_plot_clusters",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_plot_histogram",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_plot_map",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_plot_scatter",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip3 install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*-m pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*conda install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*mamba install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt-get*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm i *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*yarn add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*sudo*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    },
+    "voxel": {
+      "description": "Layer 3 Voxel specialist: resolves, inspects, creates and revises canonical saved voxels.",
+      "mode": "subagent",
+      "system": "{file:./prompts/voxel.md}",
+      "steps": 40,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_list_files",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "geocluster_summarize_provenance",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*pip3 install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*-m pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv pip*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*uv add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*conda install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*mamba install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt-get*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*apt install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm install*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*npm i *",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*yarn add*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*sudo*",
+          "effect": "deny"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "voxel_resolve",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "voxel_inspect",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "voxel_prepare",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "voxel_validate",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "voxel_submit",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "voxel_status",
+          "resource": "*",
+          "effect": "allow"
+        }
+      ]
+    },
+    "extended": {
+      "description": "Layer 4 Extended Capability agent: the only agent that may install packages; web research; custom scripts.",
+      "mode": "subagent",
+      "system": "{file:./prompts/extended.md}",
+      "steps": 30,
+      "permissions": [
+        {
+          "action": "*",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/tool-output/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "{env:XDG_DATA_HOME}/opencode/shell/*/*",
+          "effect": "allow"
+        },
+        {
+          "action": "external_directory",
+          "resource": "/tmp/opencode/*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
+          "effect": "deny"
+        },
+        {
+          "action": "read",
+          "resource": "*.env.*",
+          "effect": "deny"
+        },
+        {
+          "action": "glob",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "ask"
+        },
+        {
+          "action": "edit",
+          "resource": "runs/*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "environment.yaml",
+          "effect": "allow"
+        },
+        {
+          "action": "webfetch",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "websearch",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "deny"
+        }
+      ]
+    }
+  },
+  "mcp": {
+    "servers": {
+      "geocluster": {
+        "type": "remote",
+        "url": "{env:GEOCLUSTER_MCP_URL}",
+        "oauth": false,
+        "codemode": false,
+        "timeout": {
+          "startup": 30000,
+          "catalog": 30000,
+          "execution": 14400000
+        }
+      }
+    }
+  },
+  "providers": {
+    "proxy": {
+      "name": "GeoCluster LLM proxy",
+      "package": "@opencode/ai/providers/openrouter",
+      "settings": {
+        "baseURL": "{env:LLM_PROXY_URL}",
+        "apiKey": "runtime-relay"
+      },
+      "models": {}
+    }
+  }
+}

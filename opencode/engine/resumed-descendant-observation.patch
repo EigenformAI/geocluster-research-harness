@@ -1,0 +1,489 @@
+diff --git a/packages/cli/src/acp/event.ts b/packages/cli/src/acp/event.ts
+--- a/packages/cli/src/acp/event.ts
++++ b/packages/cli/src/acp/event.ts
+@@ -6,6 +6,8 @@ import type {
+   SessionMessageInfo,
+   SessionStructuredError,
+ } from "@opencode/client/promise"
++import { Session } from "@opencode/schema/session"
++import { Schema } from "effect"
+ import type { ACPConnection } from "./connection"
+ import { partsToContentChunks, type ReplayPart } from "./content"
+ import { ACPError } from "./error"
+@@ -190,6 +192,7 @@ export async function streamTurn(input: {
+ 
+       if (event.type === "session.execution.started") {
+         if (child) {
++          openChildren.add(child.id)
+           await notifyChild(child, { type: "status", status: "running" })
+         }
+         continue
+@@ -268,6 +271,44 @@ export async function streamTurn(input: {
+       if (event.type === "session.tool.progress") {
+         const current = tools.get(toolKey(event.data.sessionID, event.data.id))
+         if (!current) continue
++        if (current.name === "subagent" && event.data.metadata.sessionID !== undefined) {
++          const id = event.data.metadata.sessionID
++          const childID = Schema.is(Session.ID)(id) && id !== input.sessionID && id !== eventSessionID ? id : undefined
++          const gap = async () => {
++            if (control.cancelled || control.admission.signal.aborted || streamController.signal.aborted) return
++            await send({
++              sessionUpdate: "session_info_update",
++              _meta: {
++                "geocluster/child-observation": {
++                  state: "incomplete",
++                  reason: "registration_failed",
++                  toolCallId: child ? toolKey(child.id, event.data.id) : event.data.id,
++                  childSessionId: childID ?? null,
++                },
++              },
++            })
++          }
++          const known = childID ? children.get(childID) : undefined
++          if (!childID || (known && known.parentID !== eventSessionID)) await gap()
++          if (childID && !known && !control.cancelled && !control.admission.signal.aborted) {
++            // Native progress precedes child execution even on resume. Validate once: session parents are immutable.
++            // Await only this session lookup before consuming queued descendant events; never scan history.
++            const info = await input.client.session
++              .get({ sessionID: childID }, { signal: AbortSignal.any([streamController.signal, control.admission.signal]) })
++              .catch(() => undefined)
++            if (streamController.signal.aborted) break
++            if (control.cancelled || control.admission.signal.aborted) continue
++            if (!info || info.id !== childID || info.parentID !== eventSessionID) await gap()
++            if (info?.id === childID && info.parentID === eventSessionID) {
++              children.set(childID, {
++                id: childID,
++                parentID: eventSessionID,
++                depth: child ? child.depth + 1 : 1,
++                title: info.title,
++              })
++            }
++          }
++        }
+         current.metadata = event.data.metadata
+         await send({
+           sessionUpdate: "tool_call_update",
+diff --git a/packages/cli/test/acp/event-behavior.test.ts b/packages/cli/test/acp/event-behavior.test.ts
+--- a/packages/cli/test/acp/event-behavior.test.ts
++++ b/packages/cli/test/acp/event-behavior.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, test } from "bun:test"
+ import type { AgentSideConnection } from "@agentclientprotocol/sdk"
+-import type { SessionMessageInfo } from "@opencode/client/promise"
++import type { JsonValue, SessionInfo, SessionMessageInfo } from "@opencode/client/promise"
+ import { resolve } from "node:path"
+ import { replayMessages, streamTurn, type ChildSessionUpdate, type TurnControl } from "../../src/acp/event"
+ import { createSseFixture, durableEvent, ephemeralEvent, withTimeout } from "./sse-fixture"
+@@ -404,6 +404,155 @@ describe("acp event behavior", () => {
+     }
+   })
+ 
++  test("observes later-turn existing children and nested descendants before the next native event", async () => {
++    const childUpdates: ChildSessionUpdate[] = []
++    const fixture = createSseFixture({
++      onPrompt({ id, send }) {
++        send(durableEvent("session.inbox.delivered", { sessionID: "ses_parent", inboxID: id }))
++        if (id === "input_first") {
++          send(durableEvent("session.created", { sessionID: "ses_child", ...childSession("ses_child", "ses_parent", "Original title") }))
++          send(durableEvent("session.execution.started", { sessionID: "ses_child" }))
++          send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++          send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++          return
++        }
++        dispatch(send, "ses_parent", "call_resume", { sessionID: "ses_child" })
++        send(durableEvent("session.execution.started", { sessionID: "ses_child" }))
++        dispatch(send, "ses_child", "call_nested", { sessionID: "ses_nested" })
++        send(durableEvent("session.execution.started", { sessionID: "ses_nested" }))
++        send(ephemeralEvent("session.text.delta", { sessionID: "ses_nested", assistantMessageID: "msg_nested", ordinal: 0, delta: "nested answer" }))
++        send(durableEvent("session.created", { sessionID: "ses_new", ...childSession("ses_new", "ses_nested", "New descendant") }))
++        send(durableEvent("session.execution.started", { sessionID: "ses_new" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_new" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_nested" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++      },
++    })
++    fixture.sessions.set("ses_child", storedChild("ses_child", "ses_parent", "Original title"))
++    fixture.sessions.set("ses_nested", storedChild("ses_nested", "ses_child", "Original nested title"))
++    const connection = recordingConnection([])
++    try {
++      await turn({ fixture, connection, sessionID: "ses_parent", inboxID: "input_first", childSessionUpdate: async () => {} })
++      await turn({ fixture, connection, sessionID: "ses_parent", inboxID: "input_later", childSessionUpdate: async (update) => { childUpdates.push(update) } })
++      expect(childUpdates.filter((update) => update.type === "status").map((update) => [update.childSessionId, update.depth, update.title, update.type === "status" && update.status])).toEqual([
++        ["ses_child", 1, "Original title", "running"],
++        ["ses_nested", 2, "Original nested title", "running"],
++        ["ses_new", 3, "New descendant", "created"],
++        ["ses_new", 3, "New descendant", "running"],
++        ["ses_new", 3, "New descendant", "completed"],
++        ["ses_nested", 2, "Original nested title", "completed"],
++        ["ses_child", 1, "Original title", "completed"],
++      ])
++      expect(childUpdates.find((update) => update.type === "update" && update.update.sessionUpdate === "agent_message_chunk")).toMatchObject({
++        rootSessionId: "ses_parent", childSessionId: "ses_nested", parentSessionId: "ses_child", depth: 2,
++        update: { content: { text: "nested answer" } },
++      })
++      expect(fixture.requests.filter((request) => request.method === "GET").map((request) => request.path)).toEqual([
++        "/api/event", "/api/event", "/api/session/ses_child", "/api/session/ses_nested", "/api/session/ses_parent/message/msg_parent",
++      ])
++      expect(JSON.stringify(childUpdates.filter((update) => update.type === "status"))).not.toContain("private task text")
++    } finally { await fixture.stop() }
++  })
++
++  test("reopens an existing child's observation on actual execution start after completion", async () => {
++    const childUpdates: ChildSessionUpdate[] = []
++    const completed = Promise.withResolvers<void>()
++    const fixture = createSseFixture({
++      onPrompt({ id, send }) {
++        send(durableEvent("session.inbox.delivered", { sessionID: "ses_parent", inboxID: id }))
++        dispatch(send, "ses_parent", "call_first", { sessionID: "ses_child" })
++        send(durableEvent("session.execution.started", { sessionID: "ses_child" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++        dispatch(send, "ses_parent", "call_again", { sessionID: "ses_child" })
++        send(durableEvent("session.execution.started", { sessionID: "ses_child" }))
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++      },
++    })
++    fixture.sessions.set("ses_child", storedChild("ses_child", "ses_parent", "Original title"))
++    try {
++      await turn({ fixture, connection: recordingConnection([]), sessionID: "ses_parent", inboxID: "input_resume", childSessionUpdate: async (update) => {
++        childUpdates.push(update)
++        if (update.type === "status" && update.status === "completed" && childUpdates.length === 4) completed.resolve()
++      } })
++      fixture.send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++      await withTimeout(completed.promise, "resumed child completion was not delivered after parent end")
++      expect(childUpdates.map((update) => update.type === "status" && update.status)).toEqual(["running", "completed", "running", "completed"])
++      expect(fixture.requests.filter((request) => request.path === "/api/session/ses_child")).toHaveLength(1)
++    } finally { await fixture.stop() }
++  })
++
++  test.each([
++    { label: "foreign parent", metadata: { sessionID: "ses_foreign" }, childSessionId: "ses_foreign", info: storedChild("ses_foreign", "ses_other", "Private foreign title") },
++    { label: "root itself", metadata: { sessionID: "ses_parent" }, childSessionId: null, info: storedChild("ses_parent", "ses_parent", "Private title") },
++    { label: "mismatched lookup identity", metadata: { sessionID: "ses_child" }, childSessionId: "ses_child", info: storedChild("ses_wrong", "ses_parent", "Private title") },
++    { label: "missing session", metadata: { sessionID: "ses_missing" }, childSessionId: "ses_missing" },
++    { label: "invalid ID", metadata: { sessionID: "invalid/private task text" }, childSessionId: null },
++    { label: "non-string ID", metadata: { sessionID: 123 }, childSessionId: null },
++  ])("records an observation gap without exposing unrelated sessions: $label", async ({ metadata, info, childSessionId }) => {
++    const childUpdates: ChildSessionUpdate[] = []
++    const updates: SessionUpdateParams[] = []
++    const fixture = createSseFixture({ onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_parent", inboxID: id }))
++      dispatch(send, "ses_parent", "call_invalid", metadata)
++      send(ephemeralEvent("session.text.delta", { sessionID: "ses_foreign", assistantMessageID: "msg_private", ordinal: 0, delta: "private foreign answer" }))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++    } })
++    if (info && typeof metadata.sessionID === "string") fixture.sessions.set(metadata.sessionID, info)
++    try {
++      const response = await turn({ fixture, connection: recordingConnection(updates), sessionID: "ses_parent", inboxID: "input_invalid", childSessionUpdate: async (update) => { childUpdates.push(update) } })
++      expect(response.stopReason).toBe("end_turn")
++      expect(updates.filter((item) => item.update.sessionUpdate === "session_info_update")).toEqual([{
++        sessionId: "ses_parent",
++        update: { sessionUpdate: "session_info_update", _meta: { "geocluster/child-observation": {
++          state: "incomplete", reason: "registration_failed", toolCallId: "call_invalid",
++          childSessionId,
++        } } },
++      }])
++      expect(childUpdates).toEqual([])
++      expect(JSON.stringify(updates)).not.toContain("private foreign")
++    } finally { await fixture.stop() }
++  })
++
++  test("sanitizes observation lookup failures", async () => {
++    const updates: SessionUpdateParams[] = []
++    const fixture = createSseFixture({
++      onSessionGet: () => new Response("private task text and credentials", { status: 500 }),
++      onPrompt({ id, send }) {
++        send(durableEvent("session.inbox.delivered", { sessionID: "ses_parent", inboxID: id }))
++        dispatch(send, "ses_parent", "call_lookup", { sessionID: "ses_child" })
++        send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++      },
++    })
++    try {
++      expect((await turn({ fixture, connection: recordingConnection(updates), sessionID: "ses_parent", inboxID: "input_lookup" })).stopReason).toBe("end_turn")
++      expect(updates.find((item) => item.update.sessionUpdate === "session_info_update")?.update).toEqual({
++        sessionUpdate: "session_info_update", _meta: { "geocluster/child-observation": {
++          state: "incomplete", reason: "registration_failed", toolCallId: "call_lookup", childSessionId: "ses_child",
++        } },
++      })
++      expect(JSON.stringify(updates)).not.toContain("credentials")
++    } finally { await fixture.stop() }
++  })
++
++  test("ignores unrelated tool metadata and progress from unknown owners or calls", async () => {
++    const childUpdates: ChildSessionUpdate[] = []
++    const fixture = createSseFixture({ onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_parent", inboxID: id }))
++      dispatch(send, "ses_parent", "call_shell", { sessionID: "ses_foreign" }, "shell")
++      dispatch(send, "ses_unknown", "call_subagent", { sessionID: "ses_foreign" })
++      dispatch(send, "ses_parent", "call_no_identity", { phase: 1 })
++      send(ephemeralEvent("session.tool.progress", { sessionID: "ses_parent", assistantMessageID: "msg_parent", id: "call_unknown", metadata: { sessionID: "ses_foreign" } }))
++      send(durableEvent("session.execution.started", { sessionID: "ses_foreign" }))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_parent" }))
++    } })
++    try {
++      expect((await turn({ fixture, connection: recordingConnection([]), sessionID: "ses_parent", inboxID: "input_unrelated", childSessionUpdate: async (update) => { childUpdates.push(update) } })).stopReason).toBe("end_turn")
++      expect(childUpdates).toEqual([])
++      expect(fixture.requests.filter((request) => request.method === "GET").map((request) => request.path)).toEqual(["/api/event", "/api/session/ses_parent/message/msg_parent"])
++    } finally { await fixture.stop() }
++  })
++
+   test("streams tool pending, progress, success, and failure updates", async () => {
+     const updates: SessionUpdateParams[] = []
+     const fixture = createSseFixture({
+@@ -799,6 +948,16 @@ function childSession(id: string, parentID: string, title: string) {
+   }
+ }
+ 
++function storedChild(id: string, parentID: string, title: string): SessionInfo {
++  return { id, parentID, title, projectID: "project", location: { directory: "/workspace" }, cost: 0, tokens: tokens(), time: { created: 1, updated: 1 } }
++}
++
++function dispatch(send: (event: unknown) => void, sessionID: string, id: string, metadata: Record<string, JsonValue>, name = "subagent") {
++  send(durableEvent("session.tool.input.started", { sessionID, assistantMessageID: "msg_parent", id, name }))
++  send(durableEvent("session.tool.called", { sessionID, assistantMessageID: "msg_parent", id, input: { description: "New dispatch title", prompt: "private task text" }, executed: false }))
++  send(ephemeralEvent("session.tool.progress", { sessionID, assistantMessageID: "msg_parent", id, metadata }))
++}
++
+ function tokens() {
+   return { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }
+ }
+diff --git a/packages/cli/test/acp/sse-fixture.ts b/packages/cli/test/acp/sse-fixture.ts
+--- a/packages/cli/test/acp/sse-fixture.ts
++++ b/packages/cli/test/acp/sse-fixture.ts
+@@ -1,4 +1,4 @@
+-import { OpenCode, type OpenCodeEvent, type SessionMessageInfo } from "@opencode/client/promise"
++import { OpenCode, type OpenCodeEvent, type SessionInfo, type SessionMessageInfo } from "@opencode/client/promise"
+ 
+ type DurableEvent = Extract<OpenCodeEvent, { durable: unknown }>
+ type EphemeralEvent = Exclude<OpenCodeEvent, DurableEvent>
+@@ -10,6 +10,7 @@ type RequestRecord = {
+ }
+ 
+ type FixtureOptions = {
++  readonly onSessionGet?: (sessionID: string) => Response | Promise<Response>
+   readonly onPrompt?: (input: {
+     readonly sessionID: string
+     readonly id: string
+@@ -64,6 +65,7 @@ export function createSseFixture(options: FixtureOptions = {}) {
+   const streams = new Set<ReadableStreamDefaultController<Uint8Array>>()
+   const requests: RequestRecord[] = []
+   const messages = new Map<string, SessionMessageInfo>()
++  const sessions = new Map<string, SessionInfo>()
+ 
+   const send = (event: unknown) => {
+     for (const stream of streams) {
+@@ -103,6 +105,14 @@ export function createSseFixture(options: FixtureOptions = {}) {
+         )
+       }
+ 
++      const session = /^\/api\/session\/([^/]+)$/.exec(url.pathname)
++      if (request.method === "GET" && session?.[1]) {
++        const sessionID = decodeURIComponent(session[1])
++        if (options.onSessionGet) return options.onSessionGet(sessionID)
++        const info = sessions.get(sessionID)
++        return info ? Response.json({ data: info }) : new Response(null, { status: 404 })
++      }
++
+       const prompt = /^\/api\/session\/([^/]+)\/prompt$/.exec(url.pathname)
+       if (prompt?.[1]) {
+         const id = stringField(body, "id")
+@@ -164,6 +174,7 @@ export function createSseFixture(options: FixtureOptions = {}) {
+   return {
+     client: OpenCode.make({ baseUrl: server.url.toString() }),
+     messages,
++    sessions,
+     requests,
+     send,
+     async stop() {
+diff --git a/packages/cli/test/acp/event-observation-background.test.ts b/packages/cli/test/acp/event-observation-background.test.ts
+new file mode 100644
+--- /dev/null
++++ b/packages/cli/test/acp/event-observation-background.test.ts
+@@ -0,0 +1,187 @@
++import { expect, test } from "bun:test"
++import type { AgentSideConnection } from "@agentclientprotocol/sdk"
++import { streamTurn, type ChildSessionUpdate, type TurnControl } from "../../src/acp/event"
++import { createSseFixture, durableEvent, ephemeralEvent, withTimeout } from "./sse-fixture"
++
++type SessionUpdateParams = Parameters<AgentSideConnection["sessionUpdate"]>[0]
++type Fixture = ReturnType<typeof createSseFixture>
++
++test("records a child-owner gap after parent return and continues siblings and nested descendants", async () => {
++  const completed = Promise.withResolvers<void>()
++  const updates: ChildSessionUpdate[] = []
++  const rootUpdates: SessionUpdateParams[] = []
++  const fixture = createSseFixture({
++    onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_root", inboxID: id }))
++      send(created("ses_child", "ses_root"))
++      send(created("ses_sibling", "ses_root"))
++      send(durableEvent("session.execution.started", { sessionID: "ses_child" }))
++      send(durableEvent("session.execution.started", { sessionID: "ses_sibling" }))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_root" }))
++    },
++    onSessionGet: () => new Response("private lookup error and credentials", { status: 500 }),
++  })
++  try {
++    expect((await run(fixture, rootUpdates, async (update) => {
++      updates.push(update)
++      if (update.type === "status" && update.status === "completed" && update.childSessionId === "ses_child")
++        completed.resolve()
++    })).stopReason).toBe("end_turn")
++    dispatch(fixture, "ses_child", "call_nested", "ses_unknown")
++    fixture.send(text("ses_unknown", "private foreign answer"))
++    fixture.send(created("ses_descendant", "ses_sibling"))
++    fixture.send(text("ses_descendant", "nested answer"))
++    fixture.send(durableEvent("session.execution.succeeded", { sessionID: "ses_descendant" }))
++    fixture.send(durableEvent("session.execution.succeeded", { sessionID: "ses_sibling" }))
++    fixture.send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++    await withTimeout(completed.promise, "known child completion stopped after observation gap")
++    const gap = updates.find((update) => update.type === "update" && update.update.sessionUpdate === "session_info_update")
++    expect(gap).toEqual({
++      rootSessionId: "ses_root", childSessionId: "ses_child", parentSessionId: "ses_root", depth: 1,
++      type: "update", update: {
++        sessionUpdate: "session_info_update", _meta: {
++          "geocluster/child-observation": {
++            state: "incomplete", reason: "registration_failed", toolCallId: "ses_child:call_nested", childSessionId: "ses_unknown",
++          },
++          "opencode/child-session": { id: "ses_child", parentID: "ses_root", depth: 1 },
++        },
++      },
++    })
++    expect(updates.filter((update) => update.type === "status" && update.status === "completed").map((update) => update.childSessionId))
++      .toEqual(["ses_descendant", "ses_sibling", "ses_child"])
++    expect(updates.some((update) => update.type === "update" && update.update.sessionUpdate === "agent_message_chunk" && update.childSessionId === "ses_descendant")).toBe(true)
++    expect(updates.some((update) => update.type === "status" && update.status === "failed")).toBe(false)
++    expect(JSON.stringify(updates)).not.toContain("private")
++    expect(rootUpdates).toEqual([])
++  } finally {
++    await fixture.stop()
++  }
++})
++
++test("reports mismatched known parent in its owner projection without another GET", async () => {
++  const childUpdates: ChildSessionUpdate[] = []
++  const rootUpdates: SessionUpdateParams[] = []
++  const fixture = createSseFixture({
++    onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_root", inboxID: id }))
++      send(created("ses_child", "ses_root"))
++      send(created("ses_sibling", "ses_root"))
++      dispatch({ send }, "ses_child", "call_wrong_parent", "ses_sibling")
++      dispatch({ send }, "ses_child", "call_self", "ses_child")
++      send(text("ses_sibling", "sibling answer"))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_sibling" }))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_child" }))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_root" }))
++    },
++  })
++  try {
++    expect((await run(fixture, rootUpdates, async (update) => { childUpdates.push(update) })).stopReason).toBe("end_turn")
++    const gaps = childUpdates.flatMap((item) => item.type === "update" && item.update.sessionUpdate === "session_info_update"
++      ? [item.update._meta?.["geocluster/child-observation"]] : [])
++    expect(gaps).toEqual([
++      { state: "incomplete", reason: "registration_failed", toolCallId: "ses_child:call_wrong_parent", childSessionId: "ses_sibling" },
++      { state: "incomplete", reason: "registration_failed", toolCallId: "ses_child:call_self", childSessionId: null },
++    ])
++    expect(fixture.requests.filter((request) => /^\/api\/session\/[^/]+$/.test(request.path))).toEqual([])
++    expect(childUpdates.some((item) => item.type === "status" && item.status === "completed" && item.childSessionId === "ses_sibling")).toBe(true)
++    expect(rootUpdates).toEqual([])
++  } finally {
++    await fixture.stop()
++  }
++})
++
++test.each(["succeeded", "interrupted", "failed"] as const)("registration gap preserves actual foreground outcome: %s", async (outcome) => {
++  const updates: SessionUpdateParams[] = []
++  const fixture = createSseFixture({
++    onSessionGet: () => new Response("private credentials", { status: 500 }),
++    onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_root", inboxID: id }))
++      send(created("ses_sibling", "ses_root"))
++      dispatch({ send }, "ses_root", "call_gap", "ses_unknown")
++      send(text("ses_unknown", "private unknown answer"))
++      send(text("ses_sibling", "sibling answer"))
++      send(durableEvent("session.execution.succeeded", { sessionID: "ses_sibling" }))
++      send(text("ses_root", "root answer"))
++      if (outcome === "succeeded") send(durableEvent("session.execution.succeeded", { sessionID: "ses_root" }))
++      if (outcome === "interrupted") send(durableEvent("session.execution.interrupted", { sessionID: "ses_root", reason: "user" }))
++      if (outcome === "failed") send(durableEvent("session.execution.failed", { sessionID: "ses_root", error: { type: "provider.error", message: "Actual provider failure" } }))
++    },
++  })
++  try {
++    const result = run(fixture, updates)
++    if (outcome === "failed") await expect(result).rejects.toMatchObject({ errorName: "provider.error", safeMessage: "Actual provider failure" })
++    if (outcome !== "failed") expect((await result).stopReason).toBe(outcome === "interrupted" ? "cancelled" : "end_turn")
++    expect(updates.filter((item) => item.update.sessionUpdate === "session_info_update")).toEqual([{
++      sessionId: "ses_root", update: { sessionUpdate: "session_info_update", _meta: {
++        "geocluster/child-observation": { state: "incomplete", reason: "registration_failed", toolCallId: "call_gap", childSessionId: "ses_unknown" },
++      } },
++    }])
++    expect(updates.filter((item) => item.update.sessionUpdate === "agent_message_chunk").map((item) => item.update.sessionUpdate === "agent_message_chunk" && item.update.content))
++      .toEqual([{ type: "text", text: "sibling answer" }, { type: "text", text: "root answer" }])
++    expect(JSON.stringify(updates)).not.toContain("private")
++  } finally {
++    await fixture.stop()
++  }
++})
++
++test.each(["connection", "turn"] as const)("intentional %s abort during observation GET emits no invented gap", async (kind) => {
++  const lookup = Promise.withResolvers<void>()
++  const release = Promise.withResolvers<void>()
++  const updates: SessionUpdateParams[] = []
++  const control: TurnControl = { cancelled: false, admission: new AbortController() }
++  const connection = new AbortController()
++  const fixture = createSseFixture({
++    async onSessionGet() {
++      lookup.resolve()
++      await release.promise
++      return new Response("private aborted lookup", { status: 500 })
++    },
++    onPrompt({ id, send }) {
++      send(durableEvent("session.inbox.delivered", { sessionID: "ses_root", inboxID: id }))
++      dispatch({ send }, "ses_root", "call_abort", "ses_unknown")
++    },
++  })
++  const result = run(fixture, updates, undefined, control, connection.signal)
++  try {
++    await withTimeout(lookup.promise, "observation GET did not start")
++    if (kind === "connection") connection.abort()
++    if (kind === "turn") {
++      control.cancelled = true
++      control.admission.abort()
++      fixture.send(durableEvent("session.execution.interrupted", { sessionID: "ses_root", reason: "user" }))
++    }
++    expect((await withTimeout(result, "aborted lookup prevented clean turn closure")).stopReason).toBe("cancelled")
++    expect(updates.some((item) => item.update.sessionUpdate === "session_info_update")).toBe(false)
++  } finally {
++    connection.abort()
++    release.resolve()
++    await result.catch(() => {})
++    await fixture.stop()
++  }
++})
++
++function run(fixture: Fixture, updates: SessionUpdateParams[], childSessionUpdate?: (update: ChildSessionUpdate) => Promise<void>, control: TurnControl = { cancelled: false, admission: new AbortController() }, connectionSignal?: AbortSignal) {
++  return streamTurn({
++    client: fixture.client,
++    connection: {
++      sessionUpdate: async (update) => { updates.push(update) },
++      requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
++    },
++    sessionID: "ses_root", cwd: "/workspace", start: { type: "input", id: "input_gap" }, writeTextFile: false,
++    control, connectionSignal, childSessionUpdate,
++    submit: (signal) => fixture.client.session.prompt({ sessionID: "ses_root", id: "input_gap", text: "hello" }, { signal }),
++  })
++}
++
++function created(sessionID: string, parentID: string) {
++  return durableEvent("session.created", { sessionID, parentID, slug: sessionID, projectID: "project", location: { directory: "/workspace" }, version: "test" })
++}
++
++function text(sessionID: string, delta: string) {
++  return ephemeralEvent("session.text.delta", { sessionID, assistantMessageID: `msg_${sessionID}`, ordinal: 0, delta })
++}
++
++function dispatch(fixture: Pick<Fixture, "send">, sessionID: string, id: string, childSessionID: string) {
++  fixture.send(durableEvent("session.tool.input.started", { sessionID, assistantMessageID: `msg_${sessionID}`, id, name: "subagent" }))
++  fixture.send(ephemeralEvent("session.tool.progress", { sessionID, assistantMessageID: `msg_${sessionID}`, id, metadata: { sessionID: childSessionID } }))
++}

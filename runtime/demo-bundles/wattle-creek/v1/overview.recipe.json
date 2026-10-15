@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "id": "wattle-creek-overview-v1",
+  "title": "Wattle Creek overview",
+  "destination": "maps/overview.map.json",
+  "camera": {
+    "crs": "EPSG:3857",
+    "center": [
+      13548144.176271977,
+      -3777103.499073596
+    ],
+    "zoom": 12,
+    "rotation": 0
+  },
+  "context": "off",
+  "layers": [
+    {
+      "id": "surface-au",
+      "title": "Surface Au (ppm)",
+      "paths": [
+        "assays/surface_samples.csv"
+      ],
+      "locationRecipe": {
+        "prepare": {
+          "type": "assay",
+          "options": {
+            "sourceCrs": {
+              "code": "EPSG:7851",
+              "axisOrder": "xy"
+            },
+            "unit": {
+              "name": "ppm",
+              "basis": "source-declared"
+            },
+            "numbers": {
+              "missingTokens": [
+                "",
+                "NA",
+                "N/A",
+                "NULL"
+              ],
+              "sentinels": []
+            },
+            "allowApproximate": false,
+            "mode": "surface",
+            "columns": {
+              "id": "sample_id",
+              "x": "mga_east",
+              "y": "mga_north",
+              "analyte": "au_ppm"
+            }
+          }
+        },
+        "query": {
+          "operation": "preview"
+        }
+      },
+      "style": {
+        "kind": "assay",
+        "scale": "linear",
+        "breaks": [
+          0.01,
+          0.1,
+          1
+        ],
+        "colors": [
+          "#f4e7bb",
+          "#d1b467",
+          "#bf713c",
+          "#a92d32"
+        ],
+        "symbol": "circle",
+        "size": 7,
+        "unit": "ppm",
+        "belowDetectionColor": "#668b9c",
+        "missingColor": "#a6a6a6",
+        "invalidColor": "#923a96"
+      },
+      "visible": true,
+      "opacity": 1,
+      "ownership": "client-owned",
+      "credits": [
+        "Synthetic Wattle Creek training data — CC0-1.0"
+      ]
+    },
+    {
+      "id": "collar-au",
+      "title": "Highest detected Au at each collar (ppm)",
+      "paths": [
+        "drilling/assays.csv",
+        "drilling/collars.csv"
+      ],
+      "locationRecipe": {
+        "prepare": {
+          "type": "assay",
+          "options": {
+            "sourceCrs": {
+              "code": "EPSG:7851",
+              "axisOrder": "xy"
+            },
+            "unit": {
+              "name": "ppm",
+              "basis": "source-declared"
+            },
+            "numbers": {
+              "missingTokens": [
+                "",
+                "NA",
+                "N/A",
+                "NULL"
+              ],
+              "sentinels": []
+            },
+            "allowApproximate": false,
+            "mode": "collar-summary",
+            "columns": {
+              "hole": "hole_id",
+              "from": "from_m",
+              "to": "to_m",
+              "analyte": "au_ppm"
+            },
+            "collars": {
+              "member": "collars.csv",
+              "columns": {
+                "hole": "hole_id",
+                "x": "east",
+                "y": "north"
+              }
+            },
+            "depthUnit": "m",
+            "depthWindow": {
+              "kind": "whole-hole"
+            }
+          }
+        },
+        "query": {
+          "operation": "preview"
+        }
+      },
+      "style": {
+        "kind": "assay",
+        "scale": "linear",
+        "breaks": [
+          0.01,
+          0.1,
+          1
+        ],
+        "colors": [
+          "#f4e7bb",
+          "#d1b467",
+          "#bf713c",
+          "#a92d32"
+        ],
+        "symbol": "diamond",
+        "size": 9,
+        "unit": "ppm",
+        "belowDetectionColor": "#668b9c",
+        "missingColor": "#a6a6a6",
+        "invalidColor": "#923a96"
+      },
+      "visible": true,
+      "opacity": 1,
+      "ownership": "client-owned",
+      "credits": [
+        "Synthetic Wattle Creek training data — CC0-1.0"
+      ]
+    },
+    {
+      "id": "training-outline",
+      "title": "Synthetic training area",
+      "paths": [
+        "gis/training_area.geojson"
+      ],
+      "locationRecipe": {
+        "prepare": {
+          "type": "vector",
+          "options": {}
+        },
+        "query": {
+          "operation": "preview",
+          "displayOptions": {
+            "allowApproximate": false
+          }
+        }
+      },
+      "style": {
+        "kind": "vector",
+        "color": "#537060",
+        "width": 2,
+        "pointSize": 6
+      },
+      "visible": true,
+      "opacity": 1,
+      "ownership": "client-owned",
+      "credits": [
+        "Synthetic Wattle Creek training data — CC0-1.0"
+      ]
+    }
+  ],
+  "output": {
+    "layerIds": [
+      "surface-au",
+      "collar-au",
+      "training-outline"
+    ],
+    "format": "png"
+  }
+}

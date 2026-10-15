@@ -1,26 +1,89 @@
-# Keep the build context small: source only, no VCS, docs, or local artifacts
+# =============================================================================
+# Docker Ignore File
+# Excludes unnecessary files from Docker build context
+# =============================================================================
+
+# Git
 .git
-.github
+.gitignore
+.gitmodules
+
+# Documentation
+*.md
+!README.md
 docs/
-README.md
-CONTRIBUTING.md
-SECURITY.md
 
-**/node_modules
-**/.venv
-**/__pycache__
-**/*.vsix
-agent/dist
-agent/dist-standalone
-agent/out
-agent/webview-ui/build
-agent/coverage
-agent/.vscode-test
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-mcp-server/results
-mcp-server/.venv
+# Node.js
+**/node_modules/
+**/.npm/
+**/.yarn/
+**/yarn-error.log
+**/npm-debug.log
 
+# Build artifacts
+**/dist/
+**/build/
+
+# Test files
+**/__tests__/
+**/*.test.ts
+**/*.spec.ts
+**/coverage/
+**/.gc-file-tests-*/
+
+# Development files
+docker-compose*.yml
+*.local
+.env*
 *.log
+
+# Local development workspaces and datasets do not enter the image.
+sample-workspace/
+local-workspace/
+.geocluster-local/
+kazakstan-data/
 logs/
-.env
-.env.*
+
+# The MCP's local virtualenv and caches (the image runs `uv sync` itself)
+geocluster-mcp/.venv/
+**/__pycache__/
+**/.pytest_cache/
+
+# OpenCode: ship the runtime config generator, but not development scripts/tests.
+opencode/test/
+opencode/prompt-src/
+opencode/scripts/*
+!opencode/scripts/build-config.mjs
+!opencode/config/**/*.md
+
+# Runtime gateway: tests and local deps are not shipped (npm ci runs in the image)
+runtime/test/
+runtime/node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# CI/CD
+.github/
+.gitlab/
+.circleci/
+
+# Scripts (not needed in image, entrypoint.sh copied separately)
+scripts/
+
+# Lock files (recreated during build)
+# yarn.lock is included for reproducible builds

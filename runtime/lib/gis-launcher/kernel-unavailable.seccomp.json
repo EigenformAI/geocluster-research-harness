@@ -1,0 +1,6 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    { "names": ["chroot"], "action": "SCMP_ACT_ERRNO", "errnoRet": 38 }
+  ]
+}
