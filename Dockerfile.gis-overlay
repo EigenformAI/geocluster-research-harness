@@ -1,0 +1,42 @@
+ARG BASE_IMAGE=geocluster-runtime:latest
+FROM ${BASE_IMAGE}
+USER root
+COPY LICENSE NOTICE ThirdPartyNotices.txt /usr/share/doc/geocluster-runtime/
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+WORKDIR /opt/geocluster-runtime
+# The selected consolidated base supplies locked Node dependencies, the processor,
+# MCP, engine and system development libraries. Fail explicitly if the latter are absent.
+RUN pkg-config --exists gdal json-c proj openssl
+# Older bases keep uv's interpreter beneath /root. Relocate only that trusted
+# interpreter tree so both profiles can leave root's home private.
+RUN python=$(readlink -f /home/geocluster/mcp-server/.venv/bin/python) \
+    && prefix=${python%/bin/*} \
+    && mkdir -p /opt/mcp-python \
+    && cp -a "$prefix"/. /opt/mcp-python/ \
+    && sed -i 's|^home = .*|home = /opt/mcp-python/bin|' /home/geocluster/mcp-server/.venv/pyvenv.cfg \
+    && ln -sfn "/opt/mcp-python/bin/$(basename "$python")" /home/geocluster/mcp-server/.venv/bin/python \
+    && chown -R root:root /opt/mcp-python \
+    && chmod -R go-w /opt/mcp-python \
+    && chmod 0700 /root
+# Cache official, checksum-pinned PROJ data independently of other runtime edits.
+COPY --chown=root:root runtime/lib/gis-grids/build.mjs runtime/lib/gis-grids/grids.lock.json runtime/lib/gis-grids/LICENSE.txt /opt/geocluster-runtime/lib/gis-grids/
+RUN node lib/gis-grids/build.mjs
+COPY --chown=root:root runtime/ /opt/geocluster-runtime/
+COPY --chown=root:root opencode/config/ /opt/opencode/config/
+COPY --chown=root:root opencode/scripts/build-config.mjs /opt/opencode/scripts/build-config.mjs
+COPY --chown=root:root entrypoint.sh /entrypoint.sh
+RUN npm run build:native \
+    && rm -f /usr/local/bin/geocluster-tui /opt/geocluster-runtime/tui-client.mjs /opt/geocluster-runtime/tui-service.mjs /opt/geocluster-runtime/lib/tui.js /opt/opencode/config/opencode.json \
+    && install -o root -g root -m 4755 lib/workbook-launcher/build/workbook-launcher ./workbook-launcher \
+    && install -o root -g root -m 0555 lib/workbook-launcher/build/workbook-policy.so ./workbook-policy.so \
+    && install -o root -g root -m 4755 lib/gis-launcher/build/gis-launcher ./gis-launcher \
+    && install -o root -g root -m 0555 lib/gis-launcher/build/gis-worker ./gis-worker \
+    && chown -R root:root /opt/geocluster-runtime /opt/opencode/config /opt/opencode/scripts \
+    && chmod -R go-w /opt/geocluster-runtime /opt/opencode/config /opt/opencode/scripts \
+    && chmod 4755 workbook-launcher gis-launcher lib/preview-launcher/build/preview-launcher \
+    && node lib/reader-jails/build.mjs \
+    && chmod 755 /entrypoint.sh \
+    && install -d -o 998 -g 999 -m 0700 /home/gc-files/acceptance
+HEALTHCHECK NONE
+ARG RUNTIME_BUILD_SHA=unknown
+ENV RUNTIME_BUILD_SHA=${RUNTIME_BUILD_SHA}

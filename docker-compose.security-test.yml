@@ -1,0 +1,51 @@
+# Local privilege-separation testing. Copy .env.security-test.example to
+# .env.security-test and export processor bundle inputs before building.
+# Setup and qualification: docs/RUNTIME_FILES_DEPLOYMENT.md.
+
+services:
+  geology-ide:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        preprocessing_bundle: ${PREPROCESSING_BUILD_CONTEXT:?Capture a processor bundle first}
+      args:
+        PREPROCESSING_BUNDLE_DIGEST: ${PREPROCESSING_BUNDLE_DIGEST:?Use the captured identity digest}
+    container_name: geology-ide-security-test
+    command: ["headless"]
+    # NO user: override — entrypoint runs as root, drops to geocluster via gosu
+    privileged: true  # Needed for mount -o remount,hidepid=2 on /proc
+    ports:
+      - "3010:3000"      # access gate (runtime/gate.cjs) -> runtime gateway
+      - "3001:3001"      # Direct gateway (loopback inside the container; needs X-GC-Gate)
+      - "7655:7654"      # MCP server for geological analysis (host 7654 often held by native `uv run main.py`)
+    env_file:
+      - .env.security-test
+    environment:
+      - RUNTIME_PROFILE=managed
+      - USER_ID=test-user-123
+      - PROJECT_ID=test-project-456
+      - SYNC_INTERVAL=60
+      - NODE_ENV=development
+      - RUNTIME_DRAIN_TIMEOUT_S=240
+      # Feature and reporter flags default false in the image; env_file can select a canary.
+    # Lets IDE_DATASETS_URL / LLM_PROXY_URL in .env.security-test point at a
+    # backend running on the host (http://host.docker.internal:<port>/...).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ide-workspace:/workspace
+      - ide-logs:/var/log/runtime
+    mem_limit: 4g
+    restart: unless-stopped
+    stop_grace_period: 240s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/livez"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ide-workspace:
+  ide-logs:

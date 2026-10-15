@@ -1,41 +1,68 @@
-# =============================================================================
-# Geocluster Research Harness — local run
-#
-# Quick start (prebuilt image):
-#   docker compose up
-#   open http://localhost:3000
-#
-# Build from source instead (fresh clone needs submodules):
-#   git submodule update --init
-#   docker compose up --build
-#
-# Optional: skip the provider setup screen by passing an OpenRouter key:
-#   OPENROUTER_API_KEY=sk-or-... docker compose up
-#
-# SECURITY: the IDE has no authentication of its own. Do not publish port 3000
-# beyond localhost; if you must host it, put it behind a reverse proxy with auth.
-# =============================================================================
+# Local development. Export the processor bundle inputs before building.
+# Setup: README.md. Deployment requirements: docs/RUNTIME_FILES_DEPLOYMENT.md.
 
 services:
-  harness:
-    image: ghcr.io/eigenformai/geocluster-research-harness:latest
+  geology-ide:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: geocluster-research-harness
+      additional_contexts:
+        preprocessing_bundle: ${PREPROCESSING_BUILD_CONTEXT:?Capture a processor bundle first}
+      args:
+        PREPROCESSING_BUNDLE_DIGEST: ${PREPROCESSING_BUNDLE_DIGEST:?Use the captured identity digest}
+    container_name: geology-ide-local
+    command: ["headless"]
+    user: "0:0"  # Run as root for local dev (volume permissions)
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"      # access gate (runtime/gate.cjs) -> runtime gateway
+      - "3001:3001"      # Direct gateway access (loopback inside the container; needs X-GC-Gate)
     environment:
-      # Optional — pre-configures the OpenRouter provider. Leave unset to pick
-      # any provider (Anthropic, OpenAI, Ollama, …) in the welcome screen.
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - RUNTIME_PROFILE=managed
+      # User/Project identification
+      - USER_ID=dev-user
+      - PROJECT_ID=test-project
+
+      # R2 Storage Configuration (optional for local dev)
+      # Uncomment and fill in to test R2 sync
+      # - R2_ENDPOINT=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+      # - R2_ACCESS_KEY=your_access_key
+      # - R2_SECRET_KEY=your_secret_key
+      # - R2_BUCKET=geocluster-data
+
+      # Sync settings
+      - SYNC_ENABLED=false  # Disable R2 sync for local dev
+      - SYNC_INTERVAL=60
+
+      - NODE_ENV=development
+      - PREPROCESSING_ENABLED=${PREPROCESSING_ENABLED:-false}
+      - RUNTIME_AGGREGATE_ACTIVITY=${RUNTIME_AGGREGATE_ACTIVITY:-false}
+      - LOCAL_WORKSPACE_HOST_UID=${LOCAL_WORKSPACE_HOST_UID:-}
+      - LOCAL_WORKSPACE_SCAN_MS=${LOCAL_WORKSPACE_SCAN_MS:-}
+      - PREPROCESSING_MODEL=${PREPROCESSING_MODEL:-}
+      - IDE_MACHINE_TOKEN=${IDE_MACHINE_TOKEN:-}
+      - IDE_MACHINE_CREDENTIALS_URL=${IDE_MACHINE_CREDENTIALS_URL:-}
+      - LLM_PROXY_URL=${LLM_PROXY_URL:-}
+      - RUNTIME_ACTIVITY_URL=${RUNTIME_ACTIVITY_URL:-}
+      - RUNTIME_DRAIN_TIMEOUT_S=240
+      # Local only: no backend-minted token available, so the gate accepts every request
+      - RUNTIME_AUTH_DISABLED=1
     volumes:
-      - ./copy-your-files-here:/workspace
+      # Persist workspace locally
+      - type: bind
+        source: ./local-workspace
+        target: /workspace
+        bind:
+          create_host_path: false
+      # Persist logs
+      - type: bind
+        source: ./logs
+        target: /var/log/runtime
+        bind:
+          create_host_path: false
     restart: unless-stopped
+    stop_grace_period: 240s
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/livez"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,0 +1,68 @@
+{
+  "projection": {
+    "allowed_model_ids": ["openai/gpt-6-luna", "google/gemini-3.8-flash"],
+    "as_of": "2026-10-14T00:00:00+00:00",
+    "discovery_schema_version": 2,
+    "default_model_id": "openai/gpt-6-luna",
+    "managed_access_enabled": true,
+    "managed_models": {
+      "openai/gpt-6-luna": {
+        "name": "Local test model",
+        "capabilities": {"tools": true, "input": ["text", "image"], "output": ["text"]},
+        "limit": {"context": 1050000, "input": 922000, "output": 32000},
+        "variants": [
+          {"id": "low", "settings": {"reasoning": {"effort": "low"}}},
+          {"id": "medium", "settings": {"reasoning": {"effort": "medium"}}},
+          {"id": "high", "settings": {"reasoning": {"effort": "high"}}}
+        ]
+      },
+      "google/gemini-3.8-flash": {
+        "name": "Local test model",
+        "capabilities": {"tools": true, "input": ["text", "image"], "output": ["text"]},
+        "limit": {"context": 1050000, "input": 922000, "output": 32000},
+        "variants": [
+          {"id": "low", "settings": {"reasoning": {"effort": "low"}}},
+          {"id": "medium", "settings": {"reasoning": {"effort": "medium"}}},
+          {"id": "high", "settings": {"reasoning": {"effort": "high"}}}
+        ]
+      }
+    },
+    "model_capabilities": {
+      "google/gemini-3.8-flash": {
+        "allowed_reasoning_efforts": ["low", "medium", "high"],
+        "image_input": {
+          "detail": "high", "max_bytes": 8388608, "max_images": 4,
+          "max_pixels": 16000000,
+          "mime_types": ["image/png", "image/jpeg", "image/webp"],
+          "tokens_per_image": 131072
+        },
+        "input": ["text", "image"], "output": ["text"]
+      },
+      "openai/gpt-6-luna": {
+        "allowed_reasoning_efforts": ["low", "medium", "high"],
+        "image_input": {
+          "detail": "original", "max_bytes": 8388608, "max_images": 4,
+          "max_pixels": 16000000,
+          "mime_types": ["image/png", "image/jpeg", "image/webp"],
+          "tokens_per_image": 131072
+        },
+        "input": ["text", "image"], "output": ["text"]
+      }
+    },
+    "model_limits": {
+      "google/gemini-3.8-flash": {"default_output_tokens": 32000, "max_input_tokens": 922000, "max_output_tokens": 32000},
+      "openai/gpt-6-luna": {"default_output_tokens": 32000, "max_input_tokens": 922000, "max_output_tokens": 32000}
+    }
+  },
+  "provenance": {
+    "builder": "app.services.model_discovery.build_model_discovery",
+    "builderSha256": "7d73cd9a6ace347abbc77c6bff20acaaaf59ccda5bd9697293dafd14fdeac542",
+    "generator": "processor-discovery-fixture.py; two controlled image-qualified routes; no account or supplier data",
+    "sourceFiles": {
+      "app/core/managed_model_defaults.py": "f1dbb7913582e0b6b625127987f97d3dabe7b37841b331bdf807659ca1d8af0f",
+      "app/services/account_usage_policy.py": "d775fe318a64fce71c24087c2d1f143a6b8e3447c38f15b6b33245fe7e618410",
+      "app/services/managed_images.py": "af484efc652a70e363a64e05f57d3a73e41e027b621e554e0f68e81734a43e49",
+      "app/services/model_discovery.py": "7d73cd9a6ace347abbc77c6bff20acaaaf59ccda5bd9697293dafd14fdeac542"
+    }
+  }
+}

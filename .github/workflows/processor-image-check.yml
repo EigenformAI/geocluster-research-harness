@@ -1,0 +1,82 @@
+name: Nonpublishing installed image checks
+on:
+  pull_request:
+    paths:
+      - 'runtime/**'
+      - 'opencode/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'entrypoint.sh'
+      - 'scripts/preprocessing-*'
+      - 'scripts/processor-workflow-security.test.mjs'
+      - '.github/workflows/fly-deploy.yml'
+      - '.github/workflows/processor-image-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: processor-image-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  harness:
+    name: Secret-free processor harness checks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify workflow trust boundary and harness behavior
+        run: node --test scripts/processor-workflow-security.test.mjs runtime/test/image/processor-test.test.mjs
+  qualify:
+    # Run credentialed qualification only on merged main code, never PR code.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PREPROCESSING_BUNDLE_REPO: EigenformAI/geocluster-data-preprocessing-service
+      PREPROCESSING_BUNDLE_TAG: preprocessing-d0631c8
+      PREPROCESSING_BUNDLE_DIGEST: 82b40ed2ce2a3137992726958eb82083b14455c8e4ca914dfeba2dcdccc22847
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GH_PAT }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: docker/setup-buildx-action@v3
+      - name: Verify workflow trust boundary and harness behavior
+        run: node --test scripts/processor-workflow-security.test.mjs runtime/test/image/processor-test.test.mjs
+      - name: Obtain pinned processor asset and matching external tests
+        env:
+          GH_TOKEN: ${{ secrets.PREPROCESSING_BUNDLE_TOKEN }}
+        run: python3 runtime/test/image/processor-ci-inputs.py --output "$RUNNER_TEMP/preprocessing-bundle" --test-output "$RUNNER_TEMP/processor-tests"
+      - name: Build local candidate without publication
+        run: docker buildx build --load --platform linux/amd64 --provenance=false --sbom=false --build-context preprocessing_bundle="$RUNNER_TEMP/preprocessing-bundle" --build-arg PREPROCESSING_BUNDLE_DIGEST="$PREPROCESSING_BUNDLE_DIGEST" --build-arg RUNTIME_BUILD_SHA="${{ github.sha }}" --tag geocluster-runtime:ci-candidate .
+      - name: Resolve immutable local image identity
+        id: candidate
+        run: |
+          IMAGE_ID="$(docker image inspect --format '{{.Id}}' geocluster-runtime:ci-candidate)"
+          echo "image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
+      - name: Qualify installed native readers
+        env:
+          IMAGE_ID: ${{ steps.candidate.outputs.image_id }}
+        run: node runtime/test/image/native-test.mjs --image "$IMAGE_ID"
+      - name: Qualify installed processor and real engine
+        env:
+          IMAGE_ID: ${{ steps.candidate.outputs.image_id }}
+        run: npm --prefix runtime run test:image:processor -- --image "$IMAGE_ID" --expected-bundle-digest "$PREPROCESSING_BUNDLE_DIGEST" --processor-source "$RUNNER_TEMP/processor-tests" --deadline-ms 600000 --report "$RUNNER_TEMP/processor-image-report.json"
+      - name: Retain bounded processor development evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: processor-image-check-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/processor-image-report.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,4 +1,2 @@
-# Shell scripts are exec'd inside the Linux image — a CRLF shebang from a
-# Windows checkout (core.autocrlf) breaks the interpreter lookup with
-# "exec: no such file or directory". Force LF regardless of platform.
-*.sh text eol=lf
+# Unified patches use a literal space as the context marker for empty source lines.
+opencode/engine/*.patch -whitespace

@@ -1,0 +1,32 @@
+{
+  "scope": "Historical baseline import fingerprints. Runtime indexed schema, reader and worker extensions are maintained in JavaScript; baseline vendoring must not overwrite them.",
+  "compiler": "5.9.3",
+  "frontendCommit": "e5b0df29aebf2267cc8bf8f2113f3b435daa0c19",
+  "computeRevision": "a09498baa40cb41833fc164247a29a1447f612e2",
+  "modules": {
+    "voxel-types": {
+      "sourceSha256": "7031e103b88b6dd98cb13dfa1fe48e60c1635a5d0ba19e05597af4957469c7c2",
+      "outputSha256": "6051d7bbb323b6029a7c92c8d793d6dcaa6d52a056ba6684ee4439865596ced7"
+    },
+    "voxel-grid": {
+      "sourceSha256": "16ca61a6bf4750aea724bd20939577579500881a6b7eead090434333d2508d94",
+      "outputSha256": "115699b0be56d8cc0d67b93c32235db43d5bdaf874a1caaa9f2214b70fe58957"
+    },
+    "voxel-recipe": {
+      "sourceSha256": "f9b3237d21a66c02bed70b1b91a61f719430fe567d7625f2a8ea8d636d9d838e",
+      "outputSha256": "e90f88bb89313bb3cbfc924d023cd6993da0d099fd1066952e3164a7080401ed"
+    },
+    "npy": {
+      "sourceSha256": "4801ebcbc07d01495ca899f0fc8f13149bf8cd7cfd24776d42399df5f762b02f",
+      "outputSha256": "d681ec1543497b5551220d5ed16d6159a55b0b26c8da81e29426fe5a3434ef1d"
+    },
+    "voxel-artifact": {
+      "sourceSha256": "b2e101b0e42ec6ef75b229cf1e849389f3649300ba414f20fe5155ef93c542c2",
+      "outputSha256": "af92d84e71b0e7b2ff3d44857c497cdf4df846cd29f632bc2f938870fa2c5b9d"
+    },
+    "voxel-compute": {
+      "sourceSha256": "9f52188ed30ff470795a0a09877b8b9f9ab9ae14b03cbbf93bab087deb843e3b",
+      "outputSha256": "536625ab494508973b47cc7713ea051e342d032e80f1f05a092e5c50f334d5df"
+    }
+  }
+}

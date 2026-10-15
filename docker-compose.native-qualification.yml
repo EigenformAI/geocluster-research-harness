@@ -1,0 +1,32 @@
+services:
+  native-runtime:
+    image: geocluster-runtime:native-confinement-local
+    build:
+      context: .
+      dockerfile: Dockerfile.gis-overlay
+      args:
+        BASE_IMAGE: ${RUNTIME_BASE_IMAGE:-geocluster-runtime:latest}
+        RUNTIME_BUILD_SHA: native-confinement-local
+    command: ["tui"]
+    stdin_open: true
+    tty: true
+    healthcheck:
+      disable: true
+    mem_limit: 4g
+    cpus: 2
+    environment:
+      RUNTIME_PROFILE: native
+      PROJECT_ID: native-qualification
+      USER_ID: qualification
+      SYNC_ENABLED: "false"
+      FILES_SYNC_ADAPTER: "false"
+      OWNED_DEMO_ENABLED: "false"
+      PREPROCESSING_ENABLED: "false"
+      RUNTIME_AGGREGATE_ACTIVITY: "false"
+      FILES_GIS_WORKER_ENABLED: "true"
+      FILES_WORKBOOK_WORKER_ENABLED: "true"
+    volumes:
+      - native-workspace:/workspace
+    stop_grace_period: 300s
+volumes:
+  native-workspace:

@@ -1,3 +1,0 @@
-`const { $vars } = process.env` where {
-	register_diagnostic(span=$vars, message="Use process.env.VARIABLE_NAME directly instead of destructuring.")
-}

@@ -1,25 +1,75 @@
-# Dependencies and build output (agent/ has its own .gitignore too)
+# Node.js dependencies
 node_modules/
+runtime/node_modules
+
+# Build outputs
+lib/
+!runtime/lib/
+!runtime/scripts/lib/
+# the engine's plugin implementations (plugins/*.js import ../lib/*.js); missing from 34eac85
+!opencode/config/lib/
 dist/
-out/
 build/
-*.vsix
+
+# Generated files
+src-gen/
 *.tsbuildinfo
+
+# Compiled TypeScript source maps
+*.js.map
+*.d.ts.map
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# Environment
+.env
+.env.local
+.env.test
+.env.security-test
+.geocluster-local/
+local-workspace/
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Webpack bundles
+bundle.js
+*.bundle.js
 
 # Python
 __pycache__/
+*.py[cod]
 .venv/
-*.pyc
 
-# Environment / secrets — never commit real keys
-.env
-.env.*
-!.env.example
+# Electron
+out/
 
-# Logs and scratch
-*.log
+# MCP Folder
+geocluster-mcp
+
+# Logs
 logs/
 
-# OS / editor
-.DS_Store
-copy-your-files-here/
+kazakstan-data/
+36572_Smolianova_1984/

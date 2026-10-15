@@ -1,0 +1,152 @@
+diff --git a/packages/cli/src/acp/service.ts b/packages/cli/src/acp/service.ts
+--- a/packages/cli/src/acp/service.ts
++++ b/packages/cli/src/acp/service.ts
+@@ -148,17 +148,45 @@ export function make(input: {
+ 
+   const attach = async (session: SessionInfo, cwd: string, mcpServers: readonly McpServer[]) => {
+     const currentCatalog = await catalog(cwd)
++    const selected = session.model ?? currentCatalog.defaultModel
++    const model = currentCatalog.models.find((item) => item.providerID === selected.providerID && item.id === selected.id)
++    const reset = session.model && model && selected.variant !== undefined && selected.variant !== DEFAULT_VARIANT_VALUE &&
++      !model.variants.some((variant) => variant.id === selected.variant)
++    const reconciled = reset ? { ...selected, variant: DEFAULT_VARIANT_VALUE } : selected
++    if (reset) {
++      // Persist before exposing repaired options; a display-only fallback leaves execution broken.
++      await input.client.session.switchModel({ sessionID: session.id, model: reconciled }).catch(() => {
++        throw new ACPError.ServiceFailureError({
++          safeMessage: "The engine could not save the repaired effort selection. Retry restoring this conversation.",
++          service: "session",
++          errorName: "configuration.reconciliation",
++        })
++      })
++    }
+     sessions.get(session.id)?.abort.abort()
+     const state: Attached = {
+       id: session.id,
+       cwd,
+       abort: new AbortController(),
+       catalog: currentCatalog,
+-      model: session.model ?? currentCatalog.defaultModel,
++      model: reconciled,
+       modeID: session.agent ?? currentCatalog.defaultModeID,
+     }
+     sessions.set(session.id, state)
+     await registerMcpServers(input.client, registeredMcp, state, mcpServers)
++    if (reset) {
++      await input.connection.sessionUpdate({
++        sessionId: state.id,
++        update: {
++          sessionUpdate: "session_info_update",
++          _meta: { "geocluster/effort-reset": {
++            modelId: `${selected.providerID}/${selected.id}`,
++            previousEffort: selected.variant,
++            effort: DEFAULT_VARIANT_VALUE,
++          } },
++        },
++      })
++    }
+     await input.connection.sessionUpdate({
+       sessionId: state.id,
+       update: {
+diff --git a/packages/cli/test/acp/service-reconciliation.test.ts b/packages/cli/test/acp/service-reconciliation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/packages/cli/test/acp/service-reconciliation.test.ts
+@@ -0,0 +1,97 @@
++import { describe, expect, test } from "bun:test"
++import type { SessionConfigOption, SessionNotification } from "@agentclientprotocol/sdk"
++import type { ModelInfo, ModelRef } from "@opencode/client/promise"
++import { makeACPFixture, makeSession, secondModel, testModel } from "./service-fixture"
++
++const resets = (updates: SessionNotification[]) => updates.filter((item) => item.update._meta?.["geocluster/effort-reset"])
++const effort = (response: { configOptions?: SessionConfigOption[] | null }) => response.configOptions?.find((item) => item.id === "effort")
++const noEffortModel = { ...secondModel, variants: [] } satisfies ModelInfo
++
++describe("acp persisted effort reconciliation", () => {
++  test.each([testModel, secondModel, noEffortModel])(
++    "persists supplier default before advertising repaired state: $id $variants",
++    async (model) => {
++      const session = makeSession("ses_reconcile", { model: { providerID: model.providerID, id: model.id, variant: "retired" } })
++      const writing = Promise.withResolvers<void>()
++      const release = Promise.withResolvers<void>()
++      await using fixture = makeACPFixture({
++        models: [model],
++        fetch: async (request) => {
++          if (request.method === "GET" && request.path === "/api/session/ses_reconcile") return Response.json({ data: session })
++          if (request.method === "POST" && request.path === "/api/session/ses_reconcile/model") {
++            writing.resolve()
++            await release.promise
++            session.model = (request.body as { model: ModelRef }).model
++            return new Response(null, { status: 204 })
++          }
++          return undefined
++        },
++      })
++      const pending = fixture.service.resumeSession({ sessionId: session.id, cwd: "/workspace", mcpServers: [] })
++      try {
++        await Promise.race([writing.promise, pending.then(() => { throw new Error("resume returned without persisting the repaired effort") })])
++        expect(resets(fixture.updates)).toEqual([])
++      } finally {
++        release.resolve()
++      }
++      const response = await pending
++      expect(session.model).toEqual({ providerID: model.providerID, id: model.id, variant: "default" })
++      expect(effort(response)?.currentValue).toBe(model.variants.length ? "default" : undefined)
++      expect(resets(fixture.updates)).toEqual([{
++        sessionId: session.id,
++        update: { sessionUpdate: "session_info_update", _meta: { "geocluster/effort-reset": {
++          modelId: `${model.providerID}/${model.id}`, previousEffort: "retired", effort: "default",
++        } } },
++      }])
++      await fixture.service.resumeSession({ sessionId: session.id, cwd: "/workspace", mcpServers: [] })
++      expect(fixture.requests.filter((item) => item.method === "POST")).toEqual([{
++        method: "POST", path: "/api/session/ses_reconcile/model", query: {},
++        body: { model: { providerID: model.providerID, id: model.id, variant: "default" } },
++      }])
++      expect(resets(fixture.updates)).toHaveLength(1)
++      expect(fixture.requests.some((item) => item.path.endsWith("/message") || item.path === "/api/event")).toBe(false)
++    },
++  )
++
++  test.each([
++    { label: "valid effort", model: { providerID: "test", id: secondModel.id, variant: "low" }, expected: "low" },
++    { label: "explicit default", model: { providerID: "test", id: secondModel.id, variant: "default" }, expected: "default" },
++    { label: "absent effort", model: { providerID: "test", id: secondModel.id }, expected: "default" },
++    { label: "unknown model", model: { providerID: "test", id: "missing", variant: "retired" }, expected: undefined },
++    { label: "missing selection", model: undefined, expected: "default" },
++  ])("preserves $label without writing or notifying", async ({ model, expected }) => {
++    const session = { ...makeSession("ses_preserve"), model }
++    await using fixture = makeACPFixture({ fetch(request) {
++      if (request.method === "GET" && request.path === "/api/session/ses_preserve") return Response.json({ data: session })
++      return undefined
++    } })
++    const response = await fixture.service.resumeSession({ sessionId: session.id, cwd: "/workspace", mcpServers: [] })
++    expect(effort(response)?.currentValue).toBe(expected)
++    expect(response.configOptions?.find((item) => item.id === "model")?.currentValue).toBe(model ? `${model.providerID}/${model.id}` : "test/test-model")
++    expect(fixture.requests.some((item) => item.method === "POST")).toBe(false)
++    expect(resets(fixture.updates)).toEqual([])
++  })
++
++  test("failed persistence rejects restoration, leaves no usable attachment, and can be retried", async () => {
++    const session = makeSession("ses_failed", { model: { providerID: "test", id: secondModel.id, variant: "retired" } })
++    let fail = true
++    await using fixture = makeACPFixture({ fetch(request) {
++      if (request.method === "GET" && request.path === "/api/session/ses_failed") return Response.json({ data: session })
++      if (request.method === "POST" && request.path === "/api/session/ses_failed/model") {
++        if (fail) return new Response("private storage failure", { status: 500 })
++        session.model = (request.body as { model: ModelRef }).model
++        return new Response(null, { status: 204 })
++      }
++      return undefined
++    } })
++    await expect(fixture.service.resumeSession({ sessionId: session.id, cwd: "/workspace", mcpServers: [] })).rejects.toMatchObject({
++      _tag: "ACPServiceFailureError", service: "session", errorName: "configuration.reconciliation",
++    })
++    expect(session.model?.variant).toBe("retired")
++    expect(resets(fixture.updates)).toEqual([])
++    await expect(fixture.service.setSessionConfigOption({ sessionId: session.id, configId: "effort", value: "default" })).rejects.toMatchObject({ _tag: "ACPSessionNotFoundError" })
++    fail = false
++    expect(effort(await fixture.service.resumeSession({ sessionId: session.id, cwd: "/workspace", mcpServers: [] }))?.currentValue).toBe("default")
++    expect(resets(fixture.updates)).toHaveLength(1)
++  })
++})

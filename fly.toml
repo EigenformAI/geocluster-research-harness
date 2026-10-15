@@ -1,0 +1,42 @@
+# fly.toml app configuration file generated for geocluster-ai-ide on 2026-01-28T19:31:45+08:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'geocluster-ai-ide'
+primary_region = 'sin'
+kill_signal = 'SIGTERM'
+kill_timeout = 240
+
+[build]
+
+[env]
+  RUNTIME_PROFILE = 'managed'
+  NODE_ENV = 'production'
+  SYNC_ENABLED = 'false'
+  SYNC_INTERVAL = '30'
+  PREPROCESSING_ENABLED = 'false'
+  RUNTIME_AGGREGATE_ACTIVITY = 'false'
+  RUNTIME_DRAIN_TIMEOUT_S = '240'
+
+[processes]
+  app = 'headless'
+
+[[mounts]]
+  source = 'workspace'
+  destination = '/workspace'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # Background delivery and processing are not proxy traffic. The backend lifecycle
+  # reconciler owns runtime lifetime; activity reports do not stop or extend it.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '2gb'
+  cpus = 2
+  memory_mb = 2048

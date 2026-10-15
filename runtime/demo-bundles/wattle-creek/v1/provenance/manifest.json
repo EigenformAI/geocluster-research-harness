@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "template": {
+    "id": "wattle-creek",
+    "version": 1
+  },
+  "generator": {
+    "seed": 20261008,
+    "upstreamCommit": "a1b5c205c82e84cdda8683f212a8888ce83de3e6",
+    "upstreamGeneratorSha256": "be61723a70f7db42acc5883d940b0e73e016eba2e34848de234a669d9d88985d",
+    "sourceSha256": "762c9c798fa9ea33eed80b710c1c7fb8afca2232eb1933dcbe1a832dca2dc0de",
+    "bundleGeneratorSha256": "f9f0f99c07d35b96d631ae32c67ca4e505e58c6258af0c56227f64a83dd78c9c",
+    "outlineGeneratorSha256": "33b1999cb72c9e9d6b41a252ba82a3da69f6dcfe9ea3053ac0bda655bb17714f"
+  },
+  "license": {
+    "id": "CC0-1.0",
+    "rightsOwner": "EigenformAI",
+    "approval": "Rights-owner representative approved CC0-1.0 for generated sample assets on 2026-10-10",
+    "scope": "generated CSV inputs, outline, example outputs, README, recipes, and provenance"
+  },
+  "coordinateReferences": {
+    "horizontal": "EPSG:7851",
+    "horizontalUnit": "m",
+    "vertical": "Synthetic collar elevations have no surveyed vertical datum; depths are measured downhole in metres"
+  },
+  "transformations": [
+    {
+      "tool": "pyproj",
+      "version": "3.7.2",
+      "projVersion": "9.5.1",
+      "pipeline": "+proj=pipeline +step +inv +proj=utm +zone=51 +south +ellps=GRS80",
+      "input": "EPSG:7851",
+      "geographic": "EPSG:7844",
+      "output": "OGC:CRS84",
+      "axisOrder": "longitude,latitude",
+      "precisionDecimalPlaces": 8,
+      "datumOperation": "GDA2020 geographic treated as WGS84 for synthetic map context; no epoch transformation",
+      "accuracyMetres": 3,
+      "networkGrids": false
+    }
+  ],
+  "calculations": {
+    "copper": "Reported integer cu_ppm grouped by exact sample_type; numeric min/max; sorted median, mean of middle pair for even count"
+  },
+  "publication": {
+    "overviewRecipe": "overview.recipe.json",
+    "mapDestination": "maps/overview.map.json",
+    "createFrom": "Destination workspace captures and prepared representations only",
+    "recipeIsWorkspaceMember": false
+  },
+  "memberHashes": {
+    "LICENSE.txt": "e7afe85b900a3ce52951fcb62963051e8edd191bb4ef93a6b03ce461b92f6427",
+    "README.md": "4ac589b1ed636769df0e38373e097be631c59a0108e84cf1c3b7177e47747f2f",
+    "assays/surface_samples.csv": "593f9b725ba2d7efdb2cbdf9d598111ce1bc7707c8a0f0392226dc35aaf8a3b3",
+    "drilling/assays.csv": "f6351010e6c6d6d8264b8a328aeb12f4d35a6a751f015e89adc90c978bb279ef",
+    "drilling/collars.csv": "a974580bee1e7824c37b141b04dcd78a229b7c43460ffecce7ebe533aa45dafb",
+    "examples/copper_by_sample_type.csv": "43f85fed6dddd796f3c9d16bf3b71a74b5a41ab6a69cc46ab11f1c2acef81558",
+    "examples/copper_summary.md": "336aaa1c27d5616523794c141390982ae96b95e66f245a2d72ae32f6ccbdab85",
+    "gis/training_area.geojson": "81e8060628346af044d0801f109daaf34b385a2d4f6d2cdf3905cc1fa4b2a091",
+    "overview.recipe.json": "b989bae5bd70323a9122d62a893509bea8ecfa33c6136286f99ec15da164d287"
+  },
+  "members": [
+    {
+      "path": "LICENSE.txt",
+      "sizeBytes": 7470,
+      "sha256": "e7afe85b900a3ce52951fcb62963051e8edd191bb4ef93a6b03ce461b92f6427"
+    },
+    {
+      "path": "README.md",
+      "sizeBytes": 3072,
+      "sha256": "4ac589b1ed636769df0e38373e097be631c59a0108e84cf1c3b7177e47747f2f"
+    },
+    {
+      "path": "assays/surface_samples.csv",
+      "sizeBytes": 8805,
+      "sha256": "593f9b725ba2d7efdb2cbdf9d598111ce1bc7707c8a0f0392226dc35aaf8a3b3",
+      "schema": {
+        "rows": 196,
+        "columns": [
+          "sample_id",
+          "sample_type",
+          "mga_east",
+          "mga_north",
+          "au_ppm",
+          "cu_ppm",
+          "as_ppm"
+        ],
+        "id": "sample_id",
+        "coordinates": {
+          "x": "mga_east",
+          "y": "mga_north",
+          "crs": "EPSG:7851",
+          "unit": "m"
+        },
+        "analytes": {
+          "au_ppm": "ppm",
+          "cu_ppm": "ppm",
+          "as_ppm": "ppm"
+        },
+        "missingTokens": [
+          ""
+        ],
+        "belowDetection": "<0.005"
+      }
+    },
+    {
+      "path": "drilling/assays.csv",
+      "sizeBytes": 66946,
+      "sha256": "f6351010e6c6d6d8264b8a328aeb12f4d35a6a751f015e89adc90c978bb279ef",
+      "schema": {
+        "rows": 3152,
+        "columns": [
+          "hole_id",
+          "from_m",
+          "to_m",
+          "au_ppm",
+          "cu_ppm"
+        ],
+        "hole": "hole_id",
+        "intervals": "from_m inclusive, to_m exclusive; metres",
+        "analytes": {
+          "au_ppm": "ppm",
+          "cu_ppm": "ppm"
+        },
+        "belowDetection": "<0.01",
+        "unmatchedHole": "WC141"
+      }
+    },
+    {
+      "path": "drilling/collars.csv",
+      "sizeBytes": 5753,
+      "sha256": "a974580bee1e7824c37b141b04dcd78a229b7c43460ffecce7ebe533aa45dafb",
+      "schema": {
+        "rows": 140,
+        "columns": [
+          "hole_id",
+          "east",
+          "north",
+          "rl",
+          "total_depth",
+          "azimuth",
+          "dip"
+        ],
+        "id": "hole_id",
+        "coordinates": {
+          "x": "east",
+          "y": "north",
+          "crs": "EPSG:7851",
+          "unit": "m"
+        },
+        "vertical": "invented elevation; no surveyed vertical datum",
+        "geometry": "vertical holes; dip=-90 degrees; depth measured downhole in metres"
+      }
+    },
+    {
+      "path": "examples/copper_by_sample_type.csv",
+      "sizeBytes": 96,
+      "sha256": "43f85fed6dddd796f3c9d16bf3b71a74b5a41ab6a69cc46ab11f1c2acef81558"
+    },
+    {
+      "path": "examples/copper_summary.md",
+      "sizeBytes": 716,
+      "sha256": "336aaa1c27d5616523794c141390982ae96b95e66f245a2d72ae32f6ccbdab85"
+    },
+    {
+      "path": "gis/training_area.geojson",
+      "sizeBytes": 781,
+      "sha256": "81e8060628346af044d0801f109daaf34b385a2d4f6d2cdf3905cc1fa4b2a091"
+    },
+    {
+      "path": "overview.recipe.json",
+      "sizeBytes": 4736,
+      "sha256": "b989bae5bd70323a9122d62a893509bea8ecfa33c6136286f99ec15da164d287"
+    }
+  ]
+}

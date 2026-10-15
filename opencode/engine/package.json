@@ -1,0 +1,8 @@
+{
+  "name": "geocluster-opencode-engine",
+  "private": true,
+  "description": "The pinned OpenCode engine for the runtime image",
+  "dependencies": {
+    "@opencode/cli-linux-x64": "2.0.19"
+  }
+}

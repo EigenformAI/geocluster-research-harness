@@ -1,0 +1,26 @@
+# Geochem clustering dependencies
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.2.0
+matplotlib==3.8.2
+scipy>=1.7.0
+scikit-fuzzy>=0.4.2
+
+# Image processing (tray detection and splitting)
+opencv-python-headless==4.9.0.80  # Compatible with numpy 1.26.3
+Pillow>=10.0.0  # For PIL image operations
+
+openai
+
+psycopg2-binary
+svix
+requests
+
+seaborn
+
+# Report export (markdown → PDF via pandoc)
+weasyprint
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1
+torchvision==0.24.1
