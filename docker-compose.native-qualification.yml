@@ -1,3 +1,10 @@
+# Local native-reader confinement check. Build the runtime image first (README.md), then:
+#   RUNTIME_BASE_IMAGE=geocluster-runtime:local docker compose -f docker-compose.native-qualification.yml up --build -d
+#   docker compose -f docker-compose.native-qualification.yml exec -T native-runtime \
+#     gosu gc-files node /opt/geocluster-runtime/scripts/qualify-native-readers.mjs
+# It must exit 0: both readers report state "available" with confinement "verified". Stop with `docker compose -f
+# docker-compose.native-qualification.yml down`; add --volumes only to discard test state.
+
 services:
   native-runtime:
     image: geocluster-runtime:native-confinement-local

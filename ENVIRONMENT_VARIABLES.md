@@ -8,7 +8,7 @@ Unless stated otherwise, supply settings before container startup.
 
 | Setting or command | Purpose |
 | --- | --- |
-| `RUNTIME_PROFILE` | `native` or `managed`. The public TUI helper selects `native`; deployment templates explicitly select `managed`. |
+| `RUNTIME_PROFILE` | `native` or `managed`. The public TUI helper selects `native`; the managed Compose files explicitly select `managed`. |
 | `entrypoint.sh tui` | Native OpenCode TUI with local file and MCP services. Requires a terminal. |
 | `entrypoint.sh headless` | Managed access gate, gateway, and ACP engine. An omitted command retains this managed headless default. |
 
@@ -146,8 +146,10 @@ is relative to the project.
 
 Local publication, retained-volume durability, and remote acknowledgement are
 separate outcomes. Read availability and persistence from `/files/info` and
-operation receipts. The [deployment guide](docs/RUNTIME_FILES_DEPLOYMENT.md)
-describes mount and identity requirements.
+operation receipts. Mount a retained filesystem at `/workspace` and preserve the
+whole root, including private `.runtime` state. The image runs the agent as UID
+999, the file service as UID 998, file readers as UID 997, and the processor as
+UID 996.
 
 ## Runtime capacity and limits
 
@@ -157,7 +159,7 @@ describes mount and identity requirements.
 | `RUNTIME_MEMORY_GUARD_PCT` | `85`; refuse a new turn above this container-memory percentage. |
 | `RUNTIME_PERMISSION_TIMEOUT_S` | `1800`; reject unanswered permission requests after this many seconds. |
 | `RUNTIME_MAX_TURN_HOURS` | `6`; advisory turn-age notice. `0` disables the notice. |
-| `RUNTIME_DRAIN_TIMEOUT_S` | `240`; shared shutdown deadline in seconds. |
+| `RUNTIME_DRAIN_TIMEOUT_S` | `240`; shared shutdown deadline in seconds. Give the container a stop grace period a few seconds longer, so cleanup after the deadline can finish; the TUI helper adds 5 s. |
 | `FILES_LIMITS` | JSON overrides for file-service budgets and retention. Effective values appear in `/files/info`. |
 | `VOXEL_LIMITS` | JSON overrides for voxel budgets. Effective values appear in `/voxels`. |
 | `VOXEL_AGENT_ENABLED` | `true` in the image; enables the restricted canonical voxel bridge. |
@@ -234,9 +236,8 @@ Storage observations retain their original timestamp after restart. Freshness,
 scan completeness, and measured workload headroom are independent. Storage
 warnings neither impose quotas nor establish sufficient capacity.
 
-Follow [document-processing enablement](docs/RUNTIME_FILES_DEPLOYMENT.md#document-processing-enablement)
-before opening admission. Use [document processing](docs/DOCUMENT_PROCESSING.md)
-for upload opt-out and explicit source selection.
+Managed processing admission needs a GeoCluster-compatible backend. For
+terminal use, see [native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md).
 
 In the managed profile, `PREPROCESSING_PROXY_TOKEN` is a
 private local channel credential. The root machine gateway recognizes that channel,
@@ -250,46 +251,37 @@ processing as disabled. Enablement resumes the same retained source and request.
 Persisted `processing-disabled` skips do not resume automatically. Create a fresh
 upload or workspace to process those sources.
 
-## CI build inputs
+## Build inputs
 
-| GitHub configuration | Name | Purpose |
-| --- | --- | --- |
-| Workflow job environment | `PREPROCESSING_BUNDLE_REPO` | Repository containing the reviewed processor release. |
-| Workflow job environment | `PREPROCESSING_BUNDLE_TAG` | Release holding its immutable `source.tar` asset. |
-| Workflow job environment | `PREPROCESSING_BUNDLE_DIGEST` | Expected lowercase SHA-256 of that archive. |
-| Actions secret | `PREPROCESSING_BUNDLE_TOKEN` | Read-only download authority for the processor repository. |
-| Actions secret | `GH_PAT` | Checkout authority for the repository and recursive submodules. |
-| Actions secret | `FLY_API_TOKEN` | Organization-scoped authority for qualification resources and release publication. |
-| Actions variable | `FLY_ORG_SLUG` | Fly organization override for the release workflow. |
-
-The bundle repository, tag, and digest are pinned in `jobs.build.env` of
-`.github/workflows/fly-deploy.yml` and `jobs.qualify.env` of
-`.github/workflows/processor-image-check.yml`. Update both jobs together in a pull
-request after publishing the asset. Actions variables with these names do not
-override the checked-in pins.
-
-For local builds, `PREPROCESSING_SOURCE_DIR` selects the source captured by
-`scripts/build-docker.sh`. `PREPROCESSING_BUILD_CONTEXT` selects its output
-directory and is required for Compose. `PREPROCESSING_BUNDLE_DIGEST` also supplies
-the Docker build argument. The helper recaptures working-tree bytes; source Git
-revision alone does not identify them.
+`PREPROCESSING_SOURCE_DIR` selects the processor source captured by
+`scripts/build-docker.sh`, which computes the bundle digest itself. Compose
+builds instead need `PREPROCESSING_BUILD_CONTEXT` (the capture's output directory)
+and `PREPROCESSING_BUNDLE_DIGEST` (the Docker build argument). The capture takes
+working-tree bytes; source Git revision alone does not identify them. The README
+pins the processor release tag and the digest it produces.
 
 The full image still requires this processor bundle when runtime extraction is
 disabled. Use `scripts/build-docker.sh` to capture updated source and rebuild.
 
-## Publish a qualified Fly release
+`docker-compose.yml` and `docker-compose.security-test.yml` run the managed
+profile, which refuses to start without a GeoCluster-compatible backend's machine
+credential relay. `docker-compose.yml` reads `IDE_MACHINE_CREDENTIALS_URL`,
+`IDE_MACHINE_TOKEN`, and `LLM_PROXY_URL` from the shell; the security test reads
+them from `.env.security-test`. For local use with your own provider, use
+`scripts/run-runtime-tui.sh` instead.
 
-Review the checked-in processor bundle pins. Configure an organization-scoped
-`FLY_API_TOKEN`, and `FLY_ORG_SLUG` for the **Fly qualified native release** workflow.
-The [bundle build contract](docs/RUNTIME_FILES_DEPLOYMENT.md#bundle-build-contract)
-describes the named context and source digest. Run the serialized workflow:
+Compose builds the image itself. Export the bundle inputs first, because a
+service's `env_file` does not supply build interpolation variables:
 
-```bash
-gh workflow run fly-deploy.yml --ref main
+```sh
+export PREPROCESSING_SOURCE_DIR=/absolute/path/to/geocluster-data-preprocessing-service
+export PREPROCESSING_BUILD_CONTEXT="$(mktemp -d)"
+python3 scripts/preprocessing-bundle.py \
+	--source "$PREPROCESSING_SOURCE_DIR" \
+	--output "$PREPROCESSING_BUILD_CONTEXT"
+export PREPROCESSING_BUNDLE_DIGEST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "$PREPROCESSING_BUILD_CONTEXT/identity.json")"
+mkdir -p local-workspace logs
+export IDE_MACHINE_CREDENTIALS_URL=<backend renewal URL> IDE_MACHINE_TOKEN=<machine token> \
+	LLM_PROXY_URL=<backend model proxy URL>
+docker compose up --build
 ```
-
-Require a successful `native-release-<run>-<attempt>` artifact before accepting
-publication. The workflow qualifies the exact image locally and on Fly before
-creating the canonical release. Follow [Publish a qualified native-reader release](docs/NATIVE_READER_DEPLOYMENT.md)
-for qualification failures and captured-resource cleanup. Direct canonical
-`fly deploy` bypasses these checks.

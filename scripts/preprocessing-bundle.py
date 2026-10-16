@@ -29,6 +29,8 @@ def bundle(source, output):
             info = tarfile.TarInfo(str(path.relative_to(source)))
             info.size, info.mode, info.mtime = len(raw), 0o644, 0
             archive.addfile(info, io.BytesIO(raw))
+        # These bytes are part of the digest README.md pins: update that digest whenever the
+        # requirements file or this archive layout changes (a comment in that file counts).
         raw = Path(__file__).with_name('preprocessing-build-requirements.txt').read_bytes()
         info = tarfile.TarInfo('build-requirements.txt')
         info.size, info.mode, info.mtime = len(raw), 0o644, 0

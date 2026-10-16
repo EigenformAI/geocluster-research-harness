@@ -1,5 +1,6 @@
 # Local development. Export the processor bundle inputs before building.
-# Setup: README.md. Deployment requirements: docs/RUNTIME_FILES_DEPLOYMENT.md.
+# Build inputs: ENVIRONMENT_VARIABLES.md#build-inputs. This runs the managed profile, which
+# needs a GeoCluster-compatible backend; for your own provider, use scripts/run-runtime-tui.sh.
 
 services:
   geology-ide:

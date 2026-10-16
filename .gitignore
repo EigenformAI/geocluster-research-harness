@@ -6,7 +6,7 @@ runtime/node_modules
 lib/
 !runtime/lib/
 !runtime/scripts/lib/
-# the engine's plugin implementations (plugins/*.js import ../lib/*.js); missing from 34eac85
+# the engine's plugin implementations (plugins/*.js import ../lib/*.js)
 !opencode/config/lib/
 dist/
 build/
@@ -70,6 +70,3 @@ geocluster-mcp
 
 # Logs
 logs/
-
-kazakstan-data/
-36572_Smolianova_1984/

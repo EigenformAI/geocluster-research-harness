@@ -24,8 +24,7 @@
     "test:relay": "node --test test/agent-fencing.test.mjs test/files.test.mjs test/files-openapi.test.mjs test/files-processing-server.test.mjs test/file-workbook-relay.test.mjs test/gate.test.cjs test/machine-credentials.test.mjs test/runtime-boundary.test.mjs",
     "test:machine-root": "docker run --rm --network none --entrypoint node --mount type=bind,src=\"$PWD\",dst=/runtime,readonly ${RUNTIME_TEST_IMAGE:-node:20-slim} /runtime/test/machine-root.mjs",
     "test:files": "node --test test/files.test.mjs test/files-openapi.test.mjs test/files-processing*.test.mjs test/document-processing.test.mjs test/preprocessing-client.test.mjs test/upload-processing.test.mjs test/file-*.test.mjs test/workspace-files.test.mjs test/safe-fs.test.mjs test/cloud-import.test.mjs test/backend-file-adapter.test.mjs",
-    "test:engine": "node --test test/engine/*.test.mjs",
-    "test:image:processor": "node test/image/processor-test.mjs"
+    "test:engine": "node --test test/engine/*.test.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.13.1",

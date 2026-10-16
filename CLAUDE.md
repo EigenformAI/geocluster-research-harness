@@ -20,6 +20,10 @@ npm --prefix opencode run check
 npm --prefix opencode run test:invariants
 ```
 
+For runtime or image changes, also run `npm --prefix runtime test` (after
+`npm ci --prefix runtime`) and, against the image built in the README,
+`IMAGE_TAG=local bash scripts/test-docker.sh`.
+
 Keep documentation focused on setup, usage, constraints, and decisions that code
 cannot communicate. Use generated API schemas for endpoint and field inventories.
 Do not retain migration histories, implementation tours, or verification diaries.

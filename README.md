@@ -41,8 +41,7 @@ The container targets Linux x64. You do not need to install OpenCode on your hos
 
 ## Start GeoCluster
 
-Clone the repository and the processor release it is tested with, then build
-the image:
+Clone the repository and the processor release it pins, then build the image:
 
 ```sh
 git clone https://github.com/EigenformAI/geocluster-research-harness.git
@@ -54,6 +53,12 @@ PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)"
 	IMAGE_TAG=local bash scripts/build-docker.sh
 ./scripts/run-runtime-tui.sh --image geocluster-runtime:local
 ```
+
+The build prints `Processor working-tree bundle SHA-256`. For the pinned
+release (commit `d0631c8`) it is
+`82b40ed2ce2a3137992726958eb82083b14455c8e4ca914dfeba2dcdccc22847`. A different
+value means the captured processor files, or this checkout's
+`scripts/preprocessing-build-requirements.txt`, differ from the pinned build.
 
 The launcher starts the native profile with the pinned OpenCode TUI, local file
 service, and geology tools. Run `/connect` to connect your provider, then `/models`

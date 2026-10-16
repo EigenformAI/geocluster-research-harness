@@ -48,7 +48,6 @@ docker-compose*.yml
 sample-workspace/
 local-workspace/
 .geocluster-local/
-kazakstan-data/
 logs/
 
 # The MCP's local virtualenv and caches (the image runs `uv sync` itself)
