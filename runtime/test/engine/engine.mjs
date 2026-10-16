@@ -27,7 +27,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 
 /** The engine binary: $OPENCODE_BIN, else where the image installs it (lib/config.js uses the same default). */
 export const OPENCODE_BIN = process.env.OPENCODE_BIN || "/usr/local/bin/opencode"
-/** The repo's engine config (geocluster-ai-ide-BE/opencode/config), i.e. OPENCODE_CONFIG_DIR in the image. */
+/** The repo's engine config (opencode/config), i.e. OPENCODE_CONFIG_DIR in the image. */
 export const CONFIG_DIR = path.resolve(here, "../../../opencode/config")
 export const DEFAULT_MODEL = "proxy/openai/gpt-6-luna"
 export const CLOSED_MCP_URL = "http://127.0.0.1:9/mcp" // discard port: nothing listens → geocluster_* tools absent

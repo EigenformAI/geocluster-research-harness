@@ -33,20 +33,24 @@ You need:
 - Docker running, with Buildx installed.
 - Git, Python 3, and an interactive terminal.
 - A provider account or API key supported by OpenCode. Connect it inside the TUI.
-- A processor source checkout supplied separately by your installation provider.
-  The first build requires it even if you do not use document processing.
+- A checkout of the
+  [document processor](https://github.com/EigenformAI/geocluster-data-preprocessing-service).
+  The image build requires it even if you do not use document processing.
 
 The container targets Linux x64. You do not need to install OpenCode on your host.
 
 ## Start GeoCluster
 
-Clone the repository and build the image with your processor source:
+Clone the repository and the processor release it is tested with, then build
+the image:
 
 ```sh
-git clone https://github.com/EigenformAI/geocluster-ai-ide-BE.git
-cd geocluster-ai-ide-BE
+git clone https://github.com/EigenformAI/geocluster-research-harness.git
+git clone --depth 1 --branch preprocessing-d0631c8 \
+	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git
+cd geocluster-research-harness
 git submodule update --init --recursive
-PREPROCESSING_SOURCE_DIR=/absolute/path/to/processor-source \
+PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
 	IMAGE_TAG=local bash scripts/build-docker.sh
 ./scripts/run-runtime-tui.sh --image geocluster-runtime:local
 ```
