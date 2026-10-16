@@ -225,8 +225,8 @@ STOPSIGNAL SIGTERM
 # are loopback-only.
 EXPOSE 3000
 
-# Frontends own health checks: native TUI has no access gate. Managed deployment
-# templates install the HTTP check instead of inheriting it from the image.
+# Frontends own health checks: native TUI has no access gate. The managed Compose
+# files install the HTTP check instead of inheriting it from the image.
 HEALTHCHECK NONE
 
 # NOTE: No USER directive here — entrypoint.sh runs as root to:
@@ -244,6 +244,6 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 # Build identity (API-01, runtime/lib/build-info.js): the commit this image was built from, shown in
 # /readyz.build. Last on purpose: a new value per commit must not invalidate the layers above.
-# scripts/build-docker.sh and .github/workflows/fly-deploy.yml pass it (.dockerignore excludes .git).
+# scripts/build-docker.sh passes it (.dockerignore excludes .git).
 ARG RUNTIME_BUILD_SHA=unknown
 ENV RUNTIME_BUILD_SHA=${RUNTIME_BUILD_SHA}

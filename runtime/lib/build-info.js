@@ -22,7 +22,7 @@ export const BOOT_ID = crypto.randomUUID()
 const STARTED_AT = new Date().toISOString()
 const RUNTIME_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 
-/** Behaviour a client may check before relying on it (docs/RUNTIME_API.md). */
+/** Behaviour a client may check before relying on it (agentCapabilities._meta.features; SessionBroker.capabilities()). */
 export const FEATURES = [
 	"replaySnapshot",
 	// api 3

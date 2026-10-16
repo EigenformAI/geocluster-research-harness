@@ -94,4 +94,4 @@ if [[ "$SIZE" == *"GB"* ]]; then
     log_warn "  - Using node:20-alpine as base image"
 fi
 
-log_info "Done! To run locally: docker run -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}"
+log_info "Done! To run locally: ./scripts/run-runtime-tui.sh --image ${IMAGE_NAME}:${IMAGE_TAG}"

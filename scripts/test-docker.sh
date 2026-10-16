@@ -7,7 +7,7 @@
 #
 # Needs docker and node (>= 20) on the host; no model, token or network. All the
 # checks live in runtime/test/image/image-test.mjs (one PASS/FAIL line each).
-# For a long-running local instance use scripts/run-runtime-dev.sh instead.
+# For a local interactive instance use scripts/run-runtime-tui.sh instead.
 # =============================================================================
 set -euo pipefail
 

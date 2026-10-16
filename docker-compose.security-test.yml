@@ -1,6 +1,10 @@
 # Local privilege-separation testing. Copy .env.security-test.example to
 # .env.security-test and export processor bundle inputs before building.
-# Setup and qualification: docs/RUNTIME_FILES_DEPLOYMENT.md.
+# Build inputs: ENVIRONMENT_VARIABLES.md#build-inputs. Then:
+#   docker compose -f docker-compose.security-test.yml up --build
+#   curl -fsS http://localhost:3010/readyz
+# privileged is only for testing /proc hardening, not a production policy. docker exec
+# defaults to root here; test agent file access as UID 999 (docker exec -u 999 ...).
 
 services:
   geology-ide:
