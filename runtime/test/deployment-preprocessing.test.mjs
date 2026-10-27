@@ -136,7 +136,7 @@ test("bundle includes working-tree bytes, lock and standalone supervisor; digest
 	await fs.writeFile(path.join(source, "preprocessing/__init__.py"), "dirty_worktree = True\n")
 	await fs.writeFile(path.join(source, "deployment/standalone/supervise.py"), "standalone = True\n")
 	const script = new URL("../../scripts/preprocessing-bundle.py", import.meta.url).pathname
-	const run = () => JSON.parse(execFileSync("python3", [script, "--source", source, "--output", path.join(dir, "bundle")], { encoding: "utf8" }))
+	const run = () => JSON.parse(execFileSync("python3", [script, "--source", source, "--output", path.join(dir, "bundle"), "--mode", "development"], { encoding: "utf8" }))
 	const first = run()
 	assert.equal(first.digest, run().digest)
 	execFileSync("tar", ["-xf", path.join(dir, "bundle/source.tar"), "-C", dir])

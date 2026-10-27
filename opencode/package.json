@@ -11,8 +11,8 @@
     "build": "node scripts/sync-config-contracts.mjs && node scripts/build-prompts.mjs && node scripts/build-config.mjs",
     "check": "node scripts/sync-config-contracts.mjs --check && node scripts/build-prompts.mjs --check && node scripts/build-config.mjs --check",
     "test:profiles:engine": "node --test test/profile-engine.test.mjs",
-    "test": "node --test test/config.test.mjs test/profiles.test.mjs test/plugins.test.mjs test/pdf-read.test.mjs test/voxel-agent.test.mjs test/voxel-client.test.mjs test/account-usage.test.mjs",
-    "test:invariants": "node --test test/config.test.mjs test/profiles.test.mjs test/plugins.test.mjs test/pdf-read.test.mjs test/voxel-agent.test.mjs test/voxel-client.test.mjs test/account-usage.test.mjs",
+    "test": "node --test test/config.test.mjs test/profiles.test.mjs test/plugins.test.mjs test/pdf-read.test.mjs test/voxel-agent.test.mjs test/voxel-client.test.mjs test/processing-agent.test.mjs test/processing-client.test.mjs test/account-usage.test.mjs",
+    "test:invariants": "node --test test/config.test.mjs test/profiles.test.mjs test/plugins.test.mjs test/pdf-read.test.mjs test/voxel-agent.test.mjs test/voxel-client.test.mjs test/processing-agent.test.mjs test/processing-client.test.mjs test/account-usage.test.mjs",
     "smoke": "node scripts/engine-smoke.mjs"
   }
 }

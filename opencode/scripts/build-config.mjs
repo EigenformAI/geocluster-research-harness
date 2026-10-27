@@ -18,6 +18,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { TOOL_SPECS } from "../config/lib/voxel-contract.js"
+import { PROCESSING_TOOLS, READ_TOOLS } from "../config/lib/processing-contract.js"
 export { OPENCODE_VERSION } from "../config/lib/engine-identity.js"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -68,7 +69,7 @@ export const INSTALLS = [
 const DATA_EXTENSIONS = ["csv", "tsv", "xlsx", "xls", "parquet", "las"]
 
 export const MANAGED_PROVIDER_ID = "proxy"
-const SHARED_PLUGINS = ["pdf-read", "result-protocol", "run-dir", "tool-shape", "voxel-agent"]
+const SHARED_PLUGINS = ["pdf-read", "processing-agent", "result-protocol", "run-dir", "tool-shape", "voxel-agent"]
 const MANAGED_PLUGINS = ["account-attribution", ...SHARED_PLUGINS, "retry-policy"].sort()
 
 // The engine discovers every file in <config>/plugins/ (in name order). Only the built-in patch plugin is disabled:
@@ -129,7 +130,7 @@ export function buildAgentConfig() {
 		system: "{file:./prompts/report-analysis.md}",
 		steps: 40,
 		// RE-2: may read the extraction's tables (tables/<id>.csv) directly, so no data-file deny
-		permissions: [...DENY_ALL, ...READ_ALL, ...FIND, ...mcp("report-analysis"), r("subagent", "orchestrator"), ...NO_CODE_MODE],
+		permissions: [...DENY_ALL, ...READ_ALL, ...FIND, ...mcp("report-analysis"), ...READ_TOOLS.map((name) => r(name)), r("subagent", "orchestrator"), ...NO_CODE_MODE],
 	}
 	agents.standard = {
 		description: "Standard mode: OpenCode's coding prompt outside the specialist system; canonical and legacy voxel tools remain denied.",
@@ -137,7 +138,7 @@ export function buildAgentConfig() {
 		steps: 40,
 		// No browser automation on a headless machine (about 45 browser_* tools of prompt bloat), no moving the session
 		// out of the workspace, and no `question` (how ACP delivers it is unverified; the agent asks in its reply)
-		permissions: [r("*"), ...NO_ENV, ...EDIT_WORKSPACE, r("subagent", "*", "deny"), r("external_directory", "*", "deny"), ...NO_HEADLESS, ...NO_CODE_MODE, ...NO_VOXELS],
+		permissions: [r("*"), ...NO_ENV, ...EDIT_WORKSPACE, r("subagent", "*", "deny"), r("external_directory", "*", "deny"), ...NO_HEADLESS, ...NO_CODE_MODE, ...NO_VOXELS, ...PROCESSOR_TOOLS.map((name) => r(name, "*", "deny"))],
 	}
 	agents.orchestrator = {
 		description: "Layer 2 Analysis Orchestrator: plans and dispatches specialists; never touches data itself.",
@@ -147,6 +148,7 @@ export function buildAgentConfig() {
 		permissions: [...DENY_ALL, ...READ_NO_DATA, ...FIND_NAMES, ...SPECIALISTS.map((s) => r("subagent", s)), ...NO_CODE_MODE],
 	}
 	agents.dataops = specialist("dataops", "Layer 3 DataOps specialist: inspects, validates, diagnoses cleaning issues, queries and verifies claims on datasets.")
+	agents.dataops.permissions.push(...PROCESSING_TOOLS.map((name) => r(name)))
 	agents.transform = specialist("transform", "Layer 3 Transform specialist: normalise, reshape, merge, filter, clean; tool-first, scripts as fallback.")
 	agents.analytics = specialist("analytics", "Layer 3 Analytics specialist: statistics, clustering, anomalies, dimensionality reduction, ranking.")
 	agents.geoviz = specialist("geoviz", "Layer 3 GeoViz specialist: maps, scatter plots, histograms, cluster plots.")
@@ -186,16 +188,6 @@ export function buildNativeConfig(localServices = {}) {
 		// Observation only. A cancelled shared-MCP thread may continue computing.
 		timeout: { startup: 30000, catalog: 30000, execution: 4 * 60 * 60 * 1000 },
 	} } }
-	if (localServices.processing) {
-		const { url, token } = localServices.processing
-		// Separate namespace: geocluster's run-directory hook injects arguments this API does not accept.
-		config.mcp.servers.processor = {
-			type: "remote", url, oauth: false, codemode: false,
-			headers: { Authorization: `Bearer ${token}` },
-			timeout: { startup: 30000, catalog: 30000, execution: 30000 },
-		}
-		config.agents.dataops.permissions.push(...PROCESSOR_TOOLS.map((tool) => r(tool)))
-	}
 	return config
 }
 

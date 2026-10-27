@@ -16,6 +16,21 @@ test("processor client uses fixed loopback, private credentials, and only downlo
 	assert.throws(() => new PreprocessingClient({ port: "https://evil.example" }), { error: "invalid_preprocessing_config" })
 })
 
+test("processor mutations bind the authenticated store and reject replacement before effects", async (t) => {
+	const p = await processor(t), c = new PreprocessingClient({ port: p.port, token: "private-token" })
+	const request = { source: { kind: "workspace-file", path: "a.csv" }, profileId: "default" }
+	const job = await c.submit("3548179d-27ee-48f8-9430-e58d5f0c6fe3", request)
+	await c.cancel(job.id)
+	const mutations = p.requests.filter((entry) => entry.method === "POST")
+	assert.equal(mutations.length, 2)
+	assert.ok(mutations.every((entry) => entry.headers["x-processing-store-scope"] === "processor-private-scope"))
+	p.options.storeScope = "replacement-store"
+	for (const mutate of [() => c.submit("3548179d-27ee-48f8-9430-e58d5f0c6fe3", request), () => c.cancel(job.id), () => c.cancelSubmission("3548179d-27ee-48f8-9430-e58d5f0c6fe3", request)]) {
+		await assert.rejects(mutate(), { error: "processing_store_changed" })
+	}
+	assert.equal(p.requests.filter((entry) => entry.method === "POST").length, 2)
+})
+
 test("processor client rejects oversized JSON without truncation and never follows redirects", async (t) => {
 	const p = await processor(t), c = new PreprocessingClient({ port: p.port, jsonBytes: 32 })
 	await assert.rejects(c.capabilities(), { error: "result_metadata_too_large", status: 413 })

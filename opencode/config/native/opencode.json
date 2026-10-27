@@ -2,6 +2,7 @@
   "plugins": [
     "-opencode.tool.patch",
     "./plugins/pdf-read",
+    "./plugins/processing-agent",
     "./plugins/result-protocol",
     "./plugins/run-dir",
     "./plugins/tool-shape",
@@ -235,6 +236,21 @@
           "effect": "allow"
         },
         {
+          "action": "processing_result",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_read_table",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_read_text",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
           "action": "subagent",
           "resource": "orchestrator",
           "effect": "allow"
@@ -388,6 +404,41 @@
         },
         {
           "action": "geocluster_voxel_upsert_geometry",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_submit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_get_job",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_list_jobs",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_cancel",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_get_result",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_read_table",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "processor_documents_read_text",
           "resource": "*",
           "effect": "deny"
         }
@@ -726,6 +777,51 @@
           "action": "execute",
           "resource": "*",
           "effect": "deny"
+        },
+        {
+          "action": "processing_submit",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_status",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_wait",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_cancel",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_result",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_read_table",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_read_text",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_export",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "processing_history",
+          "resource": "*",
+          "effect": "allow"
         }
       ]
     },

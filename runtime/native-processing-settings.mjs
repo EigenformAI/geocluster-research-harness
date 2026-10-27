@@ -44,13 +44,13 @@ export async function prepareNativeLaunch(source, { stateDir, processingRoot, co
 	const settings = nativeProcessingSettings(source)
 	const names = (source.RUNTIME_NATIVE_ENGINE_ENV || "").split(",").filter(Boolean)
 	const engineEnv = nativeEngineEnv(source, names, { stateDir, configDir, mcpUrl: "http://127.0.0.1:7710/mcp" })
+	engineEnv.GEOCLUSTER_PROCESSING_MODE = "native"
 	if (!settings) return { engineEnv }
 	if (!processingRoot) throw new Error("native processing requires a private state directory")
 	const engineDescriptor = settings.descriptorPath ? await readDescriptor(settings.descriptorPath) : undefined
 	const moduleURL = pathToFileURL(path.resolve(configDir, "../../scripts/build-config.mjs")).href
 	const options = {
 		directory: path.join(processingRoot, "config"), sourceDirectory: path.dirname(configDir),
-		localServices: { processing: { url: "http://127.0.0.1:8765/mcp", token: "{env:GEOCLUSTER_NATIVE_PROCESSING_TOKEN}" } },
 	}
 	if (process.getuid?.() === 0) {
 		// Never write as root through a native-user-writable retained subtree.
@@ -64,5 +64,6 @@ export async function prepareNativeLaunch(source, { stateDir, processingRoot, co
 		materializeProfile("native", options)
 	}
 	engineEnv.OPENCODE_CONFIG = path.join(options.directory, "opencode.json")
+	engineEnv.GEOCLUSTER_PROCESSING_CLIENT_DIR = path.join(processingRoot, "client")
 	return { engineEnv, processing: { model: settings.model, stateDir: processingRoot, ...(engineDescriptor ? { engineDescriptor } : {}) } }
 }

@@ -117,15 +117,13 @@ test("run-dir: MCP calls get run_dir of their ROOT session (any depth), removed 
 	assert.equal(other.run_dir, "runs/ses_other", "a second conversation gets its own folder")
 })
 
-test("run-dir: direct processor calls preserve strict arguments while geological calls retain run isolation", async () => {
+test("run-dir: processing plugin calls preserve strict arguments while geological calls retain run isolation", async () => {
 	const { ctx, fire } = fakeCtx({ sessions: TREE })
 	await runDir.setup(ctx, quiet)
-	const server = (await import("../scripts/build-config.mjs")).buildNativeConfig({ processing: { url: "http://127.0.0.1:8765/mcp", token: "test" } }).mcp.servers.processor
-	assert.ok(server, "processing must have its own server namespace")
-	for (const name of ["submit", "get_job", "list_jobs", "cancel", "get_result", "read_table", "read_text"]) {
-		const input = name === "list_jobs" ? {} : { [name === "submit" ? "source_path" : "job_id"]: name === "submit" ? "reports/report.pdf" : "job-test" }
+	for (const name of ["submit", "status", "wait", "cancel", "result", "read_table", "read_text", "export", "history"]) {
+		const input = name === "history" ? {} : name === "submit" ? { source: { kind: "workspace-file", path: "reports/report.pdf" } } : { jobId: "job-test" }
 		const original = structuredClone(input)
-		const event = { tool: `processor_documents_${name}`, sessionID: "ses_spec", id: name, input }
+		const event = { tool: `processing_${name}`, sessionID: "ses_spec", id: name, input }
 		await fire("tool", "execute.before", event)
 		assert.deepEqual(input, original, `${name}: strict processor schemas receive no run_dir or other injected argument`)
 		await fire("tool", "execute.after", { ...event, status: "completed", result: {} })
