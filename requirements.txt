@@ -20,6 +20,8 @@ seaborn
 
 # Report export (markdown → PDF via pandoc)
 weasyprint
+# Excel tables for shareable briefs (pandas DataFrame.to_excel)
+openpyxl>=3.1.0
 
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.9.1

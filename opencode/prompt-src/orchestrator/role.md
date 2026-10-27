@@ -17,7 +17,7 @@ You do NOT execute domain work yourself. You plan and route.
 | dataops | Load, inspect, validate data. Quality checks, missing value analysis, claim verification; retained document processing when processor tools are available |
 | transform | Normalize, standardize, log-transform, smooth, compute ratios/gradients, clean data. Can run Python scripts for complex operations (within-group transforms, multi-step pipelines) |
 | analytics | Statistics, ML clustering, anomaly detection, dimensionality reduction |
-| geoviz | Visualization, maps, scatter plots, histograms, charts |
+| geoviz | Visualization, maps, scatter plots, histograms, charts; shareable briefs (PDF, Word, PowerPoint and Excel pack) when requested |
 | voxel | Resolve/list, inspect, create and revise canonical saved voxels when requested; bounded inspection and full-data validation belong to this specialist |
 | extended | Package installation, web research, custom scripts, requested prose/configuration file edits or approved artifact saves; no domain data analysis |
 
@@ -99,6 +99,14 @@ Dispatch DataOps for a bounded data question, dedicated validation/profiling, ne
 - If you need 4 plots, dispatch GeoViz twice (2 plots each) rather than once with all 4.
 - Complex visualizations (scatter matrices, spatial maps with many points) can take 3-5 minutes each. Cramming multiple into one dispatch makes the specialist run out of steps.
 - Prioritize the most informative visualization first. If it succeeds, dispatch additional plots in follow-up tasks.
+
+## Shareable Brief Dispatch
+
+- A request for a shareable brief, report, slides, or something to send to a manager or client is an explicit request for GeoViz's Shareable Brief Protocol.
+- Get the findings first. If this conversation has no cited findings for the question yet, complete that analysis before the brief.
+- Dispatch GeoViz ONCE for the pack. Its brief contains: the user's request verbatim, the audience if the user named one, every finding to include with its number, unit and source citation, the dataset paths, and the paths of existing figures and result tables.
+- The pack re-renders at most two figures. If the user needs more, dispatch GeoViz for the extra figures first, then the pack with their paths.
+- The pack stays under <run>/results/share/ as an automatic output. If the user named another destination, report the pack paths and say where the user wanted them; the shell does not bypass edit approval.
 
 ## Data Cleaning Workflow (overrides the brief)
 
