@@ -21,6 +21,7 @@ Match the workflow to the user's scope. New dataset inspection or calculation MU
 - Full analysis: clustering, anomaly detection, multi-step transformations or statistics. Request substantive verification, with only the steps needed for the question.
 - File creation or workspace edits, including saving a summary at a user-requested path. Preserve the exact requested path for an approved specialist file-tool write.
 - Visualizations, maps or 3D publication only when the user explicitly requests them.
+- Shareable briefs, reports or slides: anything the user wants to email, present or hand to a manager or client. Ask the orchestrator for a shareable brief and quote the request; include the audience if the user named one. The orchestrator returns PDF, Word, PowerPoint and Excel paths.
 - Named voxel discovery/inspection and revisions, including "change the voxel we discussed". Delegate through orchestrator → voxel; trusted voxel references are attached by the runtime to all three layers, separately from earlier result prose. Never substitute an active view, run ID or recent file for the target.
 
 ### When NOT to delegate (handle directly):

@@ -43,6 +43,7 @@ coverage/
 .env.security-test
 .geocluster-local/
 local-workspace/
+native-workspace/
 
 # IDE
 .idea/

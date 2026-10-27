@@ -92,6 +92,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     pkg-config \
     pandoc \
+    fonts-dejavu-core \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libgdk-pixbuf2.0-0 \
@@ -192,6 +193,9 @@ RUN npm run build:native \
     && install -o root -g root -m 0555 /opt/geocluster-runtime/lib/gis-launcher/build/gis-worker /opt/geocluster-runtime/gis-worker \
     && node lib/reader-jails/build.mjs \
     && rm -rf /root/.npm
+# geocluster-share turns a brief into PDF, Word and PowerPoint (runtime/share-export.mjs); tool shells find it on PATH.
+RUN printf '#!/bin/sh\nexec /usr/local/bin/node /opt/geocluster-runtime/share-export.mjs "$@"\n' > /usr/local/bin/geocluster-share \
+    && chmod 0755 /usr/local/bin/geocluster-share
 
 # Set working directory
 WORKDIR /home/geocluster

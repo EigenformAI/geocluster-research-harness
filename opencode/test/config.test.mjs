@@ -162,6 +162,17 @@ test("L3-3, X-7: specialists ask for exact workspace paths; own-run outputs auto
 	}
 })
 
+test("X-7: geoviz builds the shareable brief in its run folder and runs geocluster-share without approval", () => {
+	const g = rules("geoviz")
+	assert.ok(allows(g, "edit", "runs/ses_abc/results/share/brief.md"), "the brief is an automatic output")
+	assert.ok(allows(g, "shell", '/usr/local/bin/geocluster-share "$GEOCLUSTER_RUN_DIR/results/share/brief.md"'))
+	assert.equal(evaluate(g, "external_directory", "/usr/local/bin"), "deny", "a cd to the helper's folder is refused, not asked")
+	const prompt = fs.readFileSync(path.join(ROOT, "config", "native", "prompts", "geoviz.md"), "utf8")
+	const dockerfile = fs.readFileSync(path.resolve(ROOT, "..", "Dockerfile"), "utf8")
+	for (const text of [prompt, dockerfile]) assert.ok(text.includes("/usr/local/bin/geocluster-share"), "the prompt runs the path the image installs")
+	assert.ok(prompt.includes("<run>/results/share/"))
+})
+
 test("L4-1: only extended may install; L4-2: extended has no MCP tool", () => {
 	for (const cmd of INSTALL_COMMANDS) assert.ok(allows(rules("extended"), "shell", cmd), `extended: ${cmd}`)
 	assert.deepEqual(allowedMcpTools(rules("extended"), TOOLS), [])
