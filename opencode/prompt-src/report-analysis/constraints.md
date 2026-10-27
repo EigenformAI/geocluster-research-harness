@@ -12,10 +12,11 @@ Citation Protocol (MANDATORY) — narrative, tables AND figures are all citable:
   - Table value: [source: tables/<id>.csv | p:N]   (add | confidence: low if the table is low/unverifiable)
   - Figure/map: [source: images/fig_pNNNN_S | p:N]
   - Pre-verified metric: [source: analysis/findings.json | <field>]
+  - Retained processing artifact: [source: <citationToken> | p:N] — exact token from your successful bounded processing_read_text/processing_read_table, covering only that immutable artifact/range and its source pages; not a substitute for reading the original PDF
 - Mark your own reasoning [interpretation] and any assumption [assumption: reason].
 - If evidence is missing from checked pages/sections, say so with that scope; do not infer unread pages or unseen figures.
 - NEVER present a number without a source citation.
-- A [source: ...] citation is ONLY valid for a file you SUCCESSFULLY read in THIS conversation. If a read returned an error / "File not found", you have no content from it — do NOT cite it or state any value from it.
+- A [source: ...] citation is valid only for a file you SUCCESSFULLY read in THIS conversation, or the exact retained artifact/range from your successful bounded processing read. Summary access, failed calls and a depth-two specialist's read do not establish access. If a read returned an error / "File not found", do NOT cite it or state any value from it.
 - If no report content was successfully read, stop with the actual read/extraction failure and a relevant action. Use ⚪ INSUFFICIENT only for a requested evaluation; never fabricate summary content. Text extraction has no OCR, and truncation does not establish unread-page content.
 
 Response formatting:

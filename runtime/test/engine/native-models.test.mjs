@@ -15,7 +15,7 @@ test("qualification binary has the matching verified source-build identity", { s
 	const recipe = JSON.parse(fs.readFileSync(recipePath))
 	for (const [key, value] of Object.entries(recipe)) assert.deepEqual(identity[key], value, key)
 	assert.equal(crypto.createHash("sha256").update(fs.readFileSync(OPENCODE_BIN)).digest("hex"), identity.binarySha256)
-	assert.equal(identity.binarySha256, "9b3fb5f7f27cb167b739493865705f7f197637c4f605e05042e7bd97ab4c0f5a")
+	assert.equal(identity.binarySha256, "3f7abdc7ba07cc96a2f3fd21166d62d44a58f66b87269ef6dca9ae5ef2ed3f68")
 })
 
 test("native global/project defaults, key connection persistence, no-variant tools, titles, delegates and compaction", {

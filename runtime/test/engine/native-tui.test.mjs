@@ -41,7 +41,7 @@ test("native image starts real standalone TUI without managed authority; retains
 			"--entrypoint", "node", image, "/fixtures/native-tui-qualification.mjs"])
 		const identity = JSON.parse(docker(["exec", name, "cat", "/opt/opencode/engine/build-identity.json"]))
 		for (const [key, value] of Object.entries(recipe)) assert.deepEqual(identity[key], value, key)
-		assert.equal(identity.binarySha256, "9b3fb5f7f27cb167b739493865705f7f197637c4f605e05042e7bd97ab4c0f5a")
+		assert.equal(identity.binarySha256, "3f7abdc7ba07cc96a2f3fd21166d62d44a58f66b87269ef6dca9ae5ef2ed3f68")
 		assert.deepEqual(JSON.parse(docker(["inspect", name, "--format", "{{json .HostConfig.PortBindings}}"])), {})
 		const wait = docker(["wait", name], 130000)
 		const output = docker(["logs", name])

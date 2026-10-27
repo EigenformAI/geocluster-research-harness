@@ -81,8 +81,10 @@ temp/
 .gitlab/
 .circleci/
 
-# Scripts (not needed in image, entrypoint.sh copied separately)
-scripts/
+# Only the processor-source verifier and pin enter the image build.
+scripts/*
+!scripts/preprocessing-bundle.py
+!scripts/preprocessing-release.json
 
 # Lock files (recreated during build)
 # yarn.lock is included for reproducible builds

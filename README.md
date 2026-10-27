@@ -41,24 +41,40 @@ The container targets Linux x64. You do not need to install OpenCode on your hos
 
 ## Start GeoCluster
 
-Clone the repository and the processor release it pins, then build the image:
+Clone the repository and its reviewed processor candidate, then build the image:
 
 ```sh
 git clone https://github.com/EigenformAI/geocluster-research-harness.git
-git clone --depth 1 --branch preprocessing-d0631c8 \
+git clone --depth 1 --branch preprocessing-ee7fcb6 \
 	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git
 cd geocluster-research-harness
 git submodule update --init --recursive
 PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
-	IMAGE_TAG=local bash scripts/build-docker.sh
-./scripts/run-runtime-tui.sh --image geocluster-runtime:local
+	bash scripts/build-docker.sh
+./scripts/run-runtime-tui.sh --image geocluster-runtime:latest
 ```
 
-The build prints `Processor working-tree bundle SHA-256`. For the pinned
-release (commit `d0631c8`) it is
-`82b40ed2ce2a3137992726958eb82083b14455c8e4ca914dfeba2dcdccc22847`. A different
-value means the captured processor files, or this checkout's
-`scripts/preprocessing-build-requirements.txt`, differ from the pinned build.
+The processor reference is the published `preprocessing-ee7fcb6` prerelease at
+commit `ee7fcb6fef213a7febdfadb91bc605c49b0b1a53`. It is not a general production
+release or a claim that every document extracts completely.
+
+The default build verifies the clean processor checkout against the exact commit
+and bundle SHA-256 in `scripts/preprocessing-release.json`. A different commit,
+dirty checkout, or bundle mismatch fails before Docker starts. This verifies
+processor source identity, not extraction quality or publication of an image.
+
+To include local processor changes, select development mode explicitly:
+
+```sh
+PREPROCESSING_BUILD_MODE=development \
+	PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
+	IMAGE_TAG=local bash scripts/build-docker.sh
+```
+
+Development mode captures current production files, including uncommitted changes.
+Its image and installed `build-identity.json` identify development source rather
+than a verified release. The build prints the captured bundle digest in either
+mode. Neither mode publishes an image automatically.
 
 The launcher starts the native profile with the pinned OpenCode TUI, local file
 service, and geology tools. Run `/connect` to connect your provider, then `/models`

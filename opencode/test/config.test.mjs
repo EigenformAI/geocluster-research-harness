@@ -29,38 +29,35 @@ const INSTALL_COMMANDS = [
 	"conda install gdal", "apt-get install -y gdal-bin", "npm install left-pad", "npm i left-pad", "sudo ls",
 ]
 
+const PROCESSING_TOOLS = ["submit", "status", "wait", "cancel", "result", "read_table", "read_text", "export", "history"].map((name) => `processing_${name}`)
 const PROCESSOR_TOOLS = ["submit", "get_job", "list_jobs", "cancel", "get_result", "read_table", "read_text"].map((name) => `processor_documents_${name}`)
 const processing = { url: "http://127.0.0.1:8765/mcp", token: "{env:GEOCLUSTER_NATIVE_PROCESSING_TOKEN}" }
 
-test("native processing registers a separate authenticated direct MCP with bounded calls", () => {
+test("native and managed processing use plugin tools, without direct processor credentials", () => {
 	const native = buildNativeConfig({ processing })
-	assert.deepEqual(native.mcp.servers.processor, {
-		type: "remote", url: processing.url, oauth: false, codemode: false,
-		headers: { Authorization: `Bearer ${processing.token}` },
-		timeout: { startup: 30_000, catalog: 30_000, execution: 30_000 },
-	})
+	assert.equal(native.mcp.servers.processor, undefined)
 	assert.deepEqual(native.mcp.servers.geocluster, config.mcp.servers.geocluster)
-	assert.equal(buildNativeConfig({ processing: { ...processing, token: "native-local-test-token" } }).mcp.servers.processor.headers.Authorization, "Bearer native-local-test-token")
+	for (const selected of [native, buildManagedConfig()]) assert.ok(selected.plugins.includes("./plugins/processing-agent"))
+	assert.doesNotMatch(JSON.stringify(native), /GEOCLUSTER_NATIVE_PROCESSING_TOKEN|8765/)
 })
 
-test("L3-1/2: native processing allows exactly seven tools only to DataOps within the hierarchy", () => {
-	const native = buildNativeConfig({ processing })
-	for (const name of ALL_AGENTS) {
+
+test("L3-1/2, RE-2: exact processing tools belong to DataOps; Report Analysis only reads", () => {
+	for (const native of [buildNativeConfig(), buildManagedConfig()]) for (const name of ALL_AGENTS) {
 		const permissions = native.agents[name].permissions
-		for (const tool of PROCESSOR_TOOLS) assert.equal(evaluate(permissions, tool), ["dataops", "standard"].includes(name) ? "allow" : "deny", `${name}: ${tool}`)
-		if (name !== "standard") {
-			for (const tool of ["processor_documents_delete", "processor_documents_submit_extra", "geocluster_documents_submit"]) assert.equal(evaluate(permissions, tool), "deny", `${name}: unknown ${tool}`)
+		for (const tool of PROCESSING_TOOLS) {
+			const allowed = ["dataops", "standard"].includes(name) || name === "report-analysis" && ["processing_result", "processing_read_text", "processing_read_table"].includes(tool)
+			assert.equal(evaluate(permissions, tool), allowed ? "allow" : "deny", `${name}: ${tool}`)
 		}
-		if (name !== "dataops") assert.deepEqual(native.agents[name], agents[name], `${name} remains unchanged`)
+		for (const tool of PROCESSOR_TOOLS) assert.equal(evaluate(permissions, tool), "deny", `${name}: retired ${tool}`)
+		assert.equal(evaluate(permissions, "processing_future_tool"), name === "standard" ? "allow" : "deny", `${name}: future tools`)
 		assert.equal(evaluate(permissions, "execute"), "deny", name)
 	}
-	assert.deepEqual(native.agents.dataops.permissions.filter((rule) => !PROCESSOR_TOOLS.includes(rule.action)), rules("dataops"), "all existing DataOps permissions remain intact")
 })
 
-test("native processing is opt-in and never leaks into managed composition", () => {
+test("managed composition ignores obsolete native MCP settings", () => {
 	assert.deepEqual(Object.keys(buildNativeConfig().mcp.servers), ["geocluster"])
 	assert.deepEqual(buildManagedConfig({ processing }), buildManagedConfig(), "managed configuration ignores native processing even when supplied")
-	for (const name of LAYERED) for (const tool of PROCESSOR_TOOLS) assert.equal(evaluate(rules(name), tool), "deny", `${name}: disabled ${tool}`)
 })
 
 test("X-3, X-7: only workspace edits ask; automatic run outputs stay allowed; Code Mode stays denied", () => {

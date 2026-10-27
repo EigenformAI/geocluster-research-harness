@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('native_owner', '/source/runtime/native-processing.py')
@@ -84,12 +85,13 @@ async def main():
     pending['engineInstanceId'] = 'external-dead'
     assert await owner.reconcile(), 'Borrowed engine-death evidence must settle its absent predecessor session'
     # Exercise the public FD3/stdin contract using the actual serve CLI, not a stub.
-    def launch(external=None):
+    def launch(external=None, model='offline/vision'):
         read_fd, write_fd = os.pipe()
+        invocation = str(uuid.uuid4())
         wrapper = 'import os,sys;os.dup2(int(sys.argv[1]),3);os.execv(sys.executable,[sys.executable,"-I","-u",*sys.argv[2:]])'
         process = subprocess.Popen([sys.executable, '-I', '-c', wrapper, str(read_fd),
             '/source/runtime/native-processing.py', '--state-dir', str(state / 'cli'), '--workspace', str(workspace),
-            '--model', 'offline/vision', '--drain-timeout-ms', '10000'], pass_fds=(read_fd,),
+            '--model', model, '--drain-timeout-ms', '10000', '--invocation-id', invocation], pass_fds=(read_fd,),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         os.close(read_fd)
         handoff = {'engineEnv': env}
@@ -97,13 +99,23 @@ async def main():
             handoff['engineDescriptor'] = external
         os.write(write_fd, json.dumps(handoff).encode())
         os.close(write_fd)
+        process.invocation_id = invocation
         return process
+    async def read_ready(process):
+        while True:
+            raw = await asyncio.to_thread(process.stdout.readline)
+            if not raw or 'readiness' not in json.loads(raw):
+                return raw
     process = launch()
-    raw = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30)
+    raw = await asyncio.wait_for(read_ready(process), 30)
     assert raw, (await asyncio.to_thread(process.communicate))[1].decode()
     ready = json.loads(raw)
-    assert set(ready) == {'url', 'password', 'engineInstanceId'}
+    assert set(ready) == {'url', 'password', 'engineInstanceId', 'processorToken'}
+    assert len(ready['processorToken']) == 64
     runtime_descriptor = json.loads((state / 'cli/engine.json').read_text())
+    _, engine_info = await asyncio.to_thread(native.http_request, runtime_descriptor, 'GET', '/api/info')
+    engine_environment = Path(f'/proc/{engine_info["pid"]}/environ').read_bytes().split(b'\0')
+    assert not any(value.startswith(native.TOKEN_ENV.encode() + b'=') for value in engine_environment)
     from preprocessing.dev import http_request
     ordinary_id = 'ses_ordinary_retained_native_owner'
     status, _ = await asyncio.to_thread(http_request, runtime_descriptor, 'POST', '/api/session',
@@ -118,7 +130,7 @@ async def main():
     previous = ready['engineInstanceId']
     # Replacement on the retained state requires actual prior guardian-lock release.
     process = launch()
-    raw = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30)
+    raw = await asyncio.wait_for(read_ready(process), 30)
     assert raw, (await asyncio.to_thread(process.communicate))[1].decode()
     runtime_descriptor = json.loads((state / 'cli/engine.json').read_text())
     assert previous in runtime_descriptor['recovery']['deadEngineInstances']
@@ -132,7 +144,7 @@ async def main():
     # spans different heartbeat positions; replacement cannot rely on owner PID.
     for jitter in (.017, .131):
         process = launch()
-        raw = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30)
+        raw = await asyncio.wait_for(read_ready(process), 30)
         assert raw, (await asyncio.to_thread(process.communicate))[1].decode()
         killed_identity = json.loads(raw)['engineInstanceId']
         await asyncio.sleep(jitter)
@@ -148,22 +160,22 @@ async def main():
                         except BlockingIOError:
                             await asyncio.sleep(.02)
         process = launch()
-        raw = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30)
+        raw = await asyncio.wait_for(read_ready(process), 30)
         assert raw, (await asyncio.to_thread(process.communicate))[1].decode()
         assert killed_identity in json.loads((state / 'cli/engine.json').read_text())['recovery']['deadEngineInstances']
         process.stdin.close()
         assert await asyncio.wait_for(asyncio.to_thread(process.wait), 15) == 0, process.stderr.read().decode()
     # Borrowed attachment validates the installed agent/context, exposes only a
-    # fresh local MCP token, and never closes the external server on service death.
+    # fresh private processor token, and never closes the external server on service death.
     external_server = native.NativeServer(state / 'external-server', '/usr/local/bin/opencode', env, workspace, extraction, plugin)
     external = await external_server.start(recovery={'managed': False, 'extractionExcluded': True, 'fencedGenerations': [], 'deadEngineInstances': []})
     try:
         process = launch(external)
-        raw = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30)
+        raw = await asyncio.wait_for(read_ready(process), 30)
         assert raw, (await asyncio.to_thread(process.communicate))[1].decode()
         borrowed_ready = json.loads(raw)
-        assert set(borrowed_ready) == {'borrowed', 'mcpToken'} and borrowed_ready['borrowed'] is True
-        assert len(borrowed_ready['mcpToken']) == 64 and borrowed_ready['mcpToken'] != external['password']
+        assert set(borrowed_ready) == {'borrowed', 'processorToken'} and borrowed_ready['borrowed'] is True
+        assert len(borrowed_ready['processorToken']) == 64 and borrowed_ready['processorToken'] != external['password']
         # Kill the real service's leader rather than its guardian/coordinator.
         guardians = Path(f'/proc/{process.pid}/task/{process.pid}/children').read_text().split()
         service_guardian = next(pid for pid in guardians if b'preprocessing.cli' in Path(f'/proc/{pid}/cmdline').read_bytes())
@@ -172,16 +184,28 @@ async def main():
         assert await asyncio.wait_for(asyncio.to_thread(process.wait), 15) != 0
         assert external_server.process.returncode is None
         assert (await asyncio.to_thread(http_request, external, 'GET', '/api/info'))[0] == 200
-        assert process.stdout.read() == b''
+        assert json.loads(process.stdout.read())['failure']['code'] == 'dependency_exited'
         assert external['password'].encode() not in process.stderr.read()
+        # A passive unavailable-model observation remains the primary cause even
+        # when the caller ends startup, with independently verified cleanup.
+        process = launch(external, model='offline/missing')
+        observation = json.loads(await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 30))
+        assert observation['readiness']['code'] == 'selected_model_unavailable', observation
+        process.stdin.close()
+        assert await asyncio.wait_for(asyncio.to_thread(process.wait), 15) != 0
+        receipt = json.loads((state / 'cli/drain.json').read_text())
+        assert receipt['invocationId'] == process.invocation_id and receipt['complete'] is True
+        assert receipt['failure']['code'] == 'selected_model_unavailable'
+        assert external_server.process.returncode is None
+        assert (await asyncio.to_thread(http_request, external, 'GET', '/api/info'))[0] == 200
     finally:
         await external_server.close()
     process = launch()
     process.stdin.close()
     assert await asyncio.wait_for(asyncio.to_thread(process.wait), 10) != 0
-    assert process.stdout.read() == b''
+    assert json.loads(process.stdout.read())['failure']['code'] == 'startup_interrupted'
     assert not (state / 'cli/engine.json').exists()
-    assert json.loads((state / 'cli/drain.json').read_text())['complete'] is False
+    assert json.loads((state / 'cli/drain.json').read_text())['complete'] is True
     print('native owner checks passed', flush=True)
 
 
