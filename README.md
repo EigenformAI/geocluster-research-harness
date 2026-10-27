@@ -278,9 +278,9 @@ The pack is saved under `runs/<session-id>/results/share/`:
 - `figures/`: each figure as a 300 dpi PNG for slides and as an SVG.
 - `brief.md`: the Markdown source of the three documents.
 
-Figure titles state the finding, axes carry units, colours are colour-blind safe,
-and every image has alt text. Numbers keep their sources as footnotes. Review the
-brief before you send it.
+Each slide heading states one finding, and the slide's speaker notes explain it.
+Axes carry units, colours are colour-blind safe, and every image has alt text.
+Numbers keep their sources as footnotes. Review the brief before you send it.
 
 To copy the pack to your host with the bind mount, run this from the checkout.
 Replace `<session-id>` with the folder name from the answer.
