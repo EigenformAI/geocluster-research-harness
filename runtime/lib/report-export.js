@@ -12,50 +12,24 @@
  *    concurrent conversations now share one engine. A base name is only taken when its `.docx`/`.pdf` don't exist
  *    either, so a conversion never overwrites (or, on failure, deletes) a file it didn't create;
  *  - the timestamp is UTC explicitly (the fork used process local time, which is UTC in the image);
- *  - pandoc runs through `execFile` (no shell, no quoting), with a minimal env (no gateway secrets), at most
- *    `timeoutMs` each, and ONE report at a time in the whole process (the queue below): a WeasyPrint render peaked at
- *    ~94 MB, and parallel chats finishing together must not stack them;
- *  - the timeout kills pandoc's whole process tree. execFile's own `timeout` would SIGKILL pandoc only and orphan the
- *    `weasyprint` child it waits on, which is exactly the process that hangs. A timed-out or failed conversion leaves no
- *    partial output, and a timed-out PDF leaves no `html2pdf*.html` temp file in the reports folder.
+ *  - pandoc runs through runPandoc (pandoc.js: no shell, a minimal env, a timeout that kills the whole process tree),
+ *    at most `timeoutMs` each, and ONE report at a time in the whole process (the queue below): a WeasyPrint render
+ *    peaked at ~94 MB, and parallel chats finishing together must not stack them. A timed-out or failed conversion
+ *    leaves no partial output, and a timed-out PDF leaves no `html2pdf*.html` temp file in the reports folder.
  * Kept: the commands (`pandoc <md> -o <docx>`, `pandoc <md> -o <pdf> --pdf-engine=weasyprint`), cwd = the reports
  * folder (pandoc writes its html2pdf temp file into the cwd), both formats of one report in parallel, the content
  * verbatim, and failures that are logged and never fatal. The PDF glyph and relative-image defects (D5) wait for 5.4.
  */
-import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createLogger } from "./log.js"
-import { descendants, stillRunning } from "./proc-tree.js"
+import { html2pdfTemps, pandocEnv, removeNewHtml2pdf, runPandoc, stderrTail } from "./pandoc.js"
 
 /** The only run folders reports go to: `runs/<sessionId>` (X-7). */
 const RUN_DIR = /^runs\/[A-Za-z0-9_-]+$/
 const REPORTS_SUBDIR = "_reports"
 /** `_2` … `_99` after the plain name; a hundred reports of one conversation in one second means something is wrong. */
 const MAX_SUFFIX = 99
-const STDERR_TAIL = 2048
-const MAX_BUFFER = 4 * 1024 * 1024
-/** pandoc's HTML -> PDF temp file, left in the cwd when pandoc is killed. */
-const HTML2PDF_TEMP = /^html2pdf.*\.html$/
-/** The env pandoc and weasyprint get: enough to find binaries, fonts and caches, nothing secret. */
-const ENV_KEYS = [
-	"PATH",
-	"HOME",
-	"LANG",
-	"LC_ALL",
-	"LC_CTYPE",
-	"TZ",
-	"TMPDIR",
-	"XDG_CACHE_HOME",
-	"XDG_CONFIG_HOME",
-	"XDG_DATA_HOME",
-	"FONTCONFIG_FILE",
-	"FONTCONFIG_PATH",
-	"LD_LIBRARY_PATH",
-	"PYTHONPATH",
-	"PYTHONHOME",
-]
-
 /**
  * The tail of the conversion queue, shared by every exporter in this process: one report's conversions at a time.
  * Each job resolves (never rejects), so one failure never blocks the next.
@@ -80,10 +54,6 @@ const exists = (p) =>
 			throw error
 		},
 	)
-const tail = (s) => {
-	const text = String(s ?? "")
-	return text.length > STDERR_TAIL ? text.slice(-STDERR_TAIL) : text
-}
 
 class RefusedError extends Error {}
 
@@ -94,7 +64,7 @@ export class ReportExporter {
 	#aborted = false
 	/** conversion jobs of this exporter that haven't finished (queued or running) */
 	#jobs = new Set()
-	/** pandoc processes of this exporter that are running: child -> {kill()} */
+	/** pandoc processes of this exporter that are running: one {kill()} per process */
 	#running = new Map()
 
 	/**
@@ -114,7 +84,7 @@ export class ReportExporter {
 		this.enabled = enabled !== false
 		this.timeoutMs = timeoutMs
 		this.logger = logger ?? createLogger("report")
-		this.env = Object.fromEntries(ENV_KEYS.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]))
+		this.env = pandocEnv()
 	}
 
 	/**
@@ -261,7 +231,7 @@ export class ReportExporter {
 		try {
 			const dir = path.dirname(md)
 			const base = md.slice(0, -".md".length)
-			const before = new Set((await fs.readdir(dir).catch(() => [])).filter((n) => HTML2PDF_TEMP.test(n)))
+			const before = await html2pdfTemps(dir)
 			await Promise.all([
 				this.#run("DOCX", md, `${base}.docx`, [], dir, before),
 				this.#run("PDF", md, `${base}.pdf`, ["--pdf-engine=weasyprint"], dir, before),
@@ -274,7 +244,6 @@ export class ReportExporter {
 
 	/** One pandoc run. Resolves when it ended and its leftovers are cleaned; never throws. */
 	async #run(format, md, out, extraArgs, cwd, html2pdfBefore) {
-		const started = Date.now()
 		try {
 			if (await exists(out)) {
 				this.logger.warn(`Report conversion skipped (non-fatal): ${out} already exists`, { format })
@@ -284,64 +253,25 @@ export class ReportExporter {
 			this.logger.error(`Report conversion failed (non-fatal): ${out}`, { format, error: error.message })
 			return
 		}
-		let timedOut = false
-		let killedBy = null
-		const result = await new Promise((resolve) => {
-			let child
-			const kill = async (reason) => {
-				if (killedBy) return
-				killedBy = reason
-				// Snapshot the tree while pandoc is alive: once it dies, weasyprint is re-parented and can't be found.
-				// descendants() scans /proc synchronously when called; the await only yields a microtask. Never scan
-				// once pandoc has exited: its pid may already belong to an unrelated process.
-				const alive = child.exitCode === null && child.signalCode === null
-				const tree = alive ? await descendants(child.pid) : []
-				try {
-					child.kill("SIGKILL")
-				} catch {
-					// already gone
-				}
-				for (const p of stillRunning(tree)) {
-					try {
-						process.kill(p.pid, "SIGKILL")
-					} catch {
-						// gone meanwhile
-					}
-				}
-				// A process that outlived pandoc while holding our pipes would keep 'close' (and the execFile callback,
-				// and with it the process-wide queue) waiting forever: let go of the pipes.
-				for (const stream of [child.stdin, child.stdout, child.stderr]) stream?.destroy()
-			}
-			try {
-				child = execFile(
-					this.pandocBin,
-					[md, "-o", out, ...extraArgs],
-					{ cwd, env: this.env, killSignal: "SIGKILL", maxBuffer: MAX_BUFFER, windowsHide: true },
-					(error, _stdout, stderr) => resolve({ error, stderr }),
-				)
-			} catch (error) {
-				resolve({ error, stderr: "" })
-				return
-			}
-			if (!child.pid) return // spawn failed (ENOENT…): the callback reports it
-			const timer = setTimeout(() => {
-				timedOut = true
-				void kill("timeout")
-			}, this.timeoutMs)
-			timer.unref?.()
-			this.#running.set(child, { kill })
-			child.once("close", () => {
-				clearTimeout(timer)
-				this.#running.delete(child)
-			})
+		const result = await runPandoc({
+			bin: this.pandocBin,
+			args: [md, "-o", out, ...extraArgs],
+			cwd,
+			env: this.env,
+			timeoutMs: this.timeoutMs,
+			onSpawn: (run) => {
+				const key = Symbol("pandoc")
+				this.#running.set(key, run)
+				return () => this.#running.delete(key)
+			},
 		})
-		const ms = Date.now() - started
+		const { timedOut, killedBy, ms } = result
 		if (!result.error) {
 			this.logger.info(`Generated ${format}: ${out}`, { ms })
 			return
 		}
 		await fs.rm(out, { force: true }).catch(() => {})
-		if (killedBy && format === "PDF") await this.#removeHtml2pdf(cwd, html2pdfBefore)
+		if (killedBy && format === "PDF") await removeNewHtml2pdf(cwd, html2pdfBefore)
 		const { error } = result
 		this.logger.error(`Report conversion failed (non-fatal): ${out}`, {
 			format,
@@ -351,15 +281,7 @@ export class ReportExporter {
 			killedBy,
 			ms,
 			error: killedBy ? undefined : String(error.message ?? error).split("\n")[0].slice(0, 300),
-			stderr: tail(result.stderr) || undefined,
+			stderr: stderrTail(result.stderr) || undefined,
 		})
-	}
-
-	/** Remove the html2pdf temp files that appeared during a killed PDF conversion. */
-	async #removeHtml2pdf(dir, before) {
-		const names = await fs.readdir(dir).catch(() => [])
-		for (const name of names) {
-			if (HTML2PDF_TEMP.test(name) && !before.has(name)) await fs.rm(path.join(dir, name), { force: true }).catch(() => {})
-		}
 	}
 }

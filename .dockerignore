@@ -47,6 +47,7 @@ docker-compose*.yml
 # Local development workspaces and datasets do not enter the image.
 sample-workspace/
 local-workspace/
+native-workspace/
 .geocluster-local/
 logs/
 

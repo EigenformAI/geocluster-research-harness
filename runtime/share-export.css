@@ -1,0 +1,73 @@
+/* Print styles for geocluster-share PDFs (pandoc HTML -> WeasyPrint). Overrides pandoc's screen-width body. */
+@page {
+	size: A4;
+	margin: 18mm 16mm;
+}
+body {
+	max-width: none;
+	margin: 0;
+	padding: 0;
+	font-family: "DejaVu Sans", sans-serif;
+	font-size: 10.5pt;
+	line-height: 1.45;
+	color: #1a1a1a;
+}
+header#title-block-header {
+	margin-bottom: 14pt;
+}
+h1.title {
+	font-size: 20pt;
+	margin-bottom: 2pt;
+}
+p.subtitle,
+p.date,
+p.author {
+	color: #444;
+	margin: 0;
+}
+h1 {
+	font-size: 15pt;
+	margin-top: 16pt;
+}
+h2 {
+	font-size: 12.5pt;
+}
+h1,
+h2,
+div.notes {
+	break-after: avoid;
+}
+img {
+	width: auto;
+	height: auto;
+	max-width: 100%;
+	max-height: 110mm;
+}
+figure {
+	margin: 8pt 0 12pt;
+	text-align: center;
+	break-inside: avoid;
+}
+figcaption {
+	font-size: 9pt;
+	color: #444;
+}
+table {
+	border-collapse: collapse;
+	font-size: 9.5pt;
+	margin: 8pt 0;
+	break-inside: avoid;
+}
+th,
+td {
+	border: 1px solid #bbb;
+	padding: 3pt 6pt;
+	text-align: left;
+}
+a.footnote-back {
+	display: none;
+}
+section.footnotes {
+	font-size: 8.5pt;
+	color: #444;
+}
