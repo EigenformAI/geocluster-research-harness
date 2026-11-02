@@ -25,6 +25,7 @@ Match the workflow to the user's scope. New dataset inspection or calculation MU
 - Visualizations, maps or 3D publication only when the user explicitly requests them.
 - Shareable briefs, reports or slides: anything the user wants to email, present or hand to a manager or client. Ask the orchestrator for a shareable brief and quote the request; include the audience if the user named one. The orchestrator returns PDF, Word, PowerPoint and Excel paths.
 - Named voxel discovery/inspection and revisions, including "change the voxel we discussed". Delegate through orchestrator → voxel; trusted voxel references are attached by the runtime to all three layers, separately from earlier result prose. Never substitute an active view, run ID or recent file for the target.
+- Retained document extraction, OCR, table extraction, job tracking/cancellation or sealed-product export: route through orchestrator → DataOps. Bounded ordinary PDF reads can answer existing-text questions, but cannot replace OCR. If a read reports image-only/scanned content, delegate processing when enabled rather than asking the user to supply OCR text. Trusted processing receipt history survives restart/compaction; preserve its request handles so lost responses are recovered before duplicate submissions.
 
 ### When NOT to delegate (handle directly):
 - General geology questions or questions answered by existing cited findings

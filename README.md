@@ -53,10 +53,13 @@ The container targets Linux x64. You do not need to install OpenCode on your hos
    git clone https://github.com/EigenformAI/geocluster-research-harness.git
    ```
 
-2. Clone the document processor at the release this harness pins.
+2. Clone the document processor at the release this harness pins:
+   `preprocessing-ee7fcb6`, commit `ee7fcb6fef213a7febdfadb91bc605c49b0b1a53`.
+   It is a published prerelease, not a general production release or a claim
+   that every document extracts completely.
 
    ```sh
-   git clone --depth 1 --branch preprocessing-d0631c8 \
+   git clone --depth 1 --branch preprocessing-ee7fcb6 \
    	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git
    ```
 
@@ -74,19 +77,31 @@ The container targets Linux x64. You do not need to install OpenCode on your hos
    ```
 
 5. Build the image. `PREPROCESSING_SOURCE_DIR` points the build at the processor
-   checkout from step 2. `IMAGE_TAG=local` names the image
-   `geocluster-runtime:local`.
+   checkout from step 2. The image is named `geocluster-runtime:latest`.
 
    ```sh
    PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
-   	IMAGE_TAG=local bash scripts/build-docker.sh
+   	bash scripts/build-docker.sh
    ```
 
-   The build prints `Processor working-tree bundle SHA-256`. For the pinned
-   release (commit `d0631c8`) it is
-   `82b40ed2ce2a3137992726958eb82083b14455c8e4ca914dfeba2dcdccc22847`. A different
-   value means the captured processor files, or this checkout's
-   `scripts/preprocessing-build-requirements.txt`, differ from the pinned build.
+   The build checks the processor checkout against the commit and bundle
+   SHA-256 in `scripts/preprocessing-release.json`. A different commit, a dirty
+   checkout, or a bundle mismatch stops the build before Docker starts. The
+   check confirms which processor source the image contains. It does not test
+   extraction quality, and the build does not publish the image.
+
+To build with uncommitted processor changes, run this command instead of step 5:
+
+```sh
+PREPROCESSING_BUILD_MODE=development \
+	PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
+	IMAGE_TAG=local bash scripts/build-docker.sh
+```
+
+Development mode captures the processor's current production files, including
+uncommitted changes. The image and its `build-identity.json` record development
+source, not a verified release. Use `geocluster-runtime:local` in place of
+`geocluster-runtime:latest` in the commands below.
 
 ## Add a project folder
 
@@ -148,7 +163,7 @@ build ignore that folder.
    `/workspace`, and `--project` selects the project folder inside it.
 
    ```sh
-   ./scripts/run-runtime-tui.sh --image geocluster-runtime:local \
+   ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
    	--workspace-root "$PWD/native-workspace" --project default
    ```
 
@@ -191,7 +206,7 @@ container copies files into the volume. Exit the TUI before you start.
    docker run --rm --entrypoint /bin/sh \
    	--mount type=volume,src=geocluster-native-workspace,dst=/workspace \
    	--mount type=bind,src="$PWD/runtime/demo-bundles/wattle-creek/v1",dst=/import,readonly \
-   	geocluster-runtime:local \
+   	geocluster-runtime:latest \
    	-c 'mkdir -p /workspace/default && cp -r /import /workspace/default/wattle-creek && chmod -R a+rX /workspace/default/wattle-creek'
    ```
 
@@ -202,7 +217,7 @@ container copies files into the volume. Exit the TUI before you start.
 3. Start the TUI.
 
    ```sh
-   ./scripts/run-runtime-tui.sh --image geocluster-runtime:local
+   ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest
    ```
 
 ## Ask about the folder
@@ -304,7 +319,7 @@ To copy the pack out of the Docker volume:
    docker run --rm --entrypoint /bin/sh --user "$(id -u):$(id -g)" \
    	--mount type=volume,src=geocluster-native-workspace,dst=/workspace,readonly \
    	--mount type=bind,src="$PWD/wattle-creek-brief",dst=/export \
-   	geocluster-runtime:local \
+   	geocluster-runtime:latest \
    	-c 'cp -r /workspace/default/runs/<session-id>/results/share/. /export/'
    ```
 
@@ -357,7 +372,7 @@ data disclosure. Choose a provider and deployment appropriate for your data.
   before. Without workspace options it uses the Docker volume.
 
   ```sh
-  ./scripts/run-runtime-tui.sh --image geocluster-runtime:local \
+  ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
   	--workspace-root "$PWD/native-workspace" --project default
   ```
 
@@ -370,8 +385,10 @@ data disclosure. Choose a provider and deployment appropriate for your data.
 - To stop, exit the TUI. Exiting shuts down its local runtime and owned services.
   Finish pending work before you exit or rebuild.
 
-- To update, pull the new source and rebuild the image with step 5 of
-  [Build the image](#build-the-image).
+- To update, pull the new source. If step 2 of
+  [Build the image](#build-the-image) now names a different processor tag,
+  delete the processor checkout and clone it again with step 2. Then rebuild the
+  image with step 5.
 
 ## Documentation
 
