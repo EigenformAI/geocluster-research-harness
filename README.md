@@ -135,13 +135,13 @@ build ignore that folder.
    cp -r runtime/demo-bundles/wattle-creek/v1 native-workspace/default/wattle-creek
    ```
 
-4. Make the copy readable by the runtime. The agent runs as UID 999 and the file
-   service as UID 998. `cp` applies your umask, which can leave files that only
-   you can read. `a+rX` adds read access for everyone, and execute access for
-   folders only.
+4. Make the copy eligible for startup sharing. `cp` applies your umask, which can
+   leave private files. `g+rX` adds group read access and directory traversal,
+   including execute access for files that are already executable. Startup
+   assigns shared content to the agent and file service's group.
 
    ```sh
-   chmod -R a+rX native-workspace/default/wattle-creek
+   chmod -R g+rX native-workspace/default/wattle-creek
    ```
 
 5. Start the TUI with this workspace. `--workspace-root` mounts the folder at
@@ -152,21 +152,41 @@ build ignore that folder.
    	--workspace-root "$PWD/native-workspace" --project default
    ```
 
+Startup reports the selected host UID and a `[workspace]` provisioning result.
 On the first start, the runtime takes ownership of `native-workspace/default`
-(UID 999). The files you copied keep their owner. You can still read and copy
-results without `sudo`. To add another folder later, exit the TUI first:
+(UID 999). The files you copied keep their owner. Startup grants your host account
+read and write access to ordinary project content, including future results.
+You can edit, rename, delete, and copy those files without `sudo`. The enclosing
+`native-workspace/` and private `.runtime/` state stay protected.
 
-1. Copy the folder with `sudo`.
+To add another folder later, exit the TUI first:
 
-   ```sh
-   sudo cp -r /absolute/path/to/more-data native-workspace/default/more-data
-   ```
-
-2. Make it readable by the runtime.
+1. Copy the folder as your ordinary account.
 
    ```sh
-   sudo chmod -R a+rX native-workspace/default/more-data
+   cp -r /absolute/path/to/more-data native-workspace/default/more-data
    ```
+
+2. Make the copy eligible for startup sharing.
+
+   ```sh
+   chmod -R g+rX native-workspace/default/more-data
+   ```
+
+3. Restart with the same launch command. Startup shares eligible imported files
+   with the agent and file service before they start.
+
+You can use your file manager to copy ordinary data folders into
+`native-workspace/default/` and copy results out. For bulk imports, stop the TUI,
+copy rather than move the folder, make the copy eligible as in step 2 above,
+and restart. Copying can retain restrictive source permissions. Avoid
+permission-preserving copies such as `cp -a` or `cp -p`: same-filesystem moves and
+preserved permissions can bypass inherited sharing. Restart does not force
+private files open. Files deliberately created with private modes such as `0600`,
+and directories with `0700`, remain private. Changing file ownership or permissions
+still requires the owner or an administrator. See
+[local workspace sharing](ENVIRONMENT_VARIABLES.md#local-workspace-sharing) for
+custom launch options and setup errors.
 
 ### Docker Desktop, rootless Docker, or remote Docker
 
@@ -317,7 +337,13 @@ refresh tokens. Protect those backups like credentials.
 
 Host OpenCode accounts and credentials are not copied or mounted automatically.
 Run `./scripts/run-runtime-tui.sh --help` for image, workspace, and explicit
-provider-environment options. `scripts/tui.sh` delegates to this launcher and
+provider-environment options. Supported rootful Linux bind mounts automatically
+share project content with the invoking account. See the
+[qualification requirements](ENVIRONMENT_VARIABLES.md#local-workspace-sharing).
+Use `--host-uid UID` to select an account or
+`--host-uid none` to manage permissions yourself. Disabling provisioning does not
+undo permissions already granted. Docker volumes use the copy workflow above,
+not automatic host sharing. `scripts/tui.sh` delegates to this launcher and
 accepts the same options. Native startup publishes no host ports. Some provider
 login methods show a URL or device code. Methods that require a container
 loopback callback may need extra operator configuration.

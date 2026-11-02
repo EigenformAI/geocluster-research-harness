@@ -85,7 +85,8 @@ The helper accepts repeatable `--engine-env NAME` for explicit provider variable
 such as `OPENROUTER_API_KEY`. Values come from the operator environment, not
 command arguments. MCP and file workers receive no provider variables. The helper
 rejects bootstrap and execution-control names: `OPENCODE_*`, `GEOCLUSTER_*`,
-`RUNTIME_*`, `IDE_*`, `PREPROCESSING_*`, `R2_*`, `XDG_*`, `HOME`, `PATH`,
+`RUNTIME_*`, `IDE_*`, `PREPROCESSING_*`, `R2_*`, `XDG_*`, `LOCAL_WORKSPACE_*`,
+`FILES_LIMITS`, `FILES_STATE_DIR`, `VOXEL_LIMITS`, `HOME`, `PATH`,
 `NODE_OPTIONS`, `BUN_OPTIONS`, `LD_*`, `PYTHONHOME`, and `PYTHONPATH`. This is a
 packaged-helper restriction, not an OpenCode provider policy.
 
@@ -115,18 +116,71 @@ copy the enclosing volume root, `.runtime`, or `.ide-state`.
 
 ## Local workspace sharing
 
+UID is a numeric user identifier. GID is a numeric group identifier. A POSIX ACL
+grants additional account-specific permissions without changing file ownership.
+
 | Setting | Default and purpose |
 | --- | --- |
-| `LOCAL_WORKSPACE_HOST_UID` | Empty; opt-in numeric host UID for the headless local sharing setup. The native TUI helper does not select it automatically. |
+| `--host-uid auto\|none\|UID` | Native launcher option; default `auto`. Selects the invoking account for a qualified local Linux bind mount. Named volumes disable sharing. `none` disables provisioning; a numeric UID requires `--workspace-root`. |
+| `LOCAL_WORKSPACE_HOST_UID` | Direct-container bootstrap setting; empty disables sharing. The native launcher ignores the inherited value and always passes its resolved CLI selection, including an empty value when disabled. Numeric UIDs must be canonical decimal from 1 through 4294967294, excluding 996–999. |
 | `LOCAL_WORKSPACE_SCAN_MS` | `30000`; startup sharing scan budget in milliseconds. Must be a positive safe integer. |
+| `FILES_LIMITS` | JSON object of known positive integer file-service limits. Sharing uses `subtreeEntries`, default `10000`, as its entry budget. The native launcher forwards this setting and `LOCAL_WORKSPACE_SCAN_MS` when present. |
 
-Sharing requires local Docker with identity UID and GID mappings. Backend-managed
-storage deployments are unsupported. Private runtime state and explicitly private files
-remain private. Recreate the container after changing these settings. Use
-`./scripts/workspace.sh upload SOURCE DESTINATION` for files that need a shared
-copy in the selected local Compose installation. This helper targets the headless
-Compose service, not a container started by `run-runtime-tui.sh`. The destination
-is relative to the project.
+Automatic selection requires a Linux client, the default Docker context, and a
+standard local Unix socket without `DOCKER_HOST` or `DOCKER_CONTEXT` overrides.
+The daemon must be Linux, not Docker Desktop, rootless, or user-namespace remapped.
+Missing or unsupported metadata stops bind-mount auto mode with recovery guidance.
+Docker volumes retain their separate import and export workflow.
+
+A numeric override selects a daemon-host account, not necessarily the client
+account. Custom endpoints receive a warning that bind paths belong to the daemon
+host. An override does not bypass checks that container user and group identifiers
+match the daemon host, or filesystem ACL requirements. Backend-managed storage deployments
+are unsupported. A forwarded standard Docker socket cannot be distinguished from
+a conventional local daemon by these probes. Use an explicit UID or `none` for
+such custom setups.
+
+Provisioning runs under exclusive runtime ownership before project writers start.
+It preserves file owners, assigns shared project content to GID 999, and grants
+the selected host account access through POSIX ACLs. Directories inherit sharing
+for normal future creations. The agent is UID 999; the file service is UID 998
+with GID 999. `/workspace` and private `.runtime` state remain protected.
+`datasets`, `_orchestrator`, reserved paths, nested mounts, hardlinks, special
+objects, and explicitly private entries are excluded.
+
+Default ACLs apply when files are created, not when existing files are moved into
+the project. Permission-preserving copies, explicit `0600` or `0700` modes, and
+later restrictive `chmod` can prevent shared access. Startup skips private nested
+directories and regular files without group-read permission, except root-owned
+nonprivate files. Existing ACLs naming another user or a named group cause an
+error rather than being removed. Copy bulk imports while the TUI is stopped and
+restart to share eligible entries. Live edits can invalidate saved file-version
+checks and require refreshing the affected paths.
+
+Setup changes persistent project permissions. `--host-uid none` does not undo
+earlier changes. Use only a dedicated runtime workspace, not a home directory.
+Errors identify the affected path and a recovery action:
+
+- `conflicting_acl`: retain the custom ACL and opt out, or deliberately remove
+  the conflicting entry before retrying. Changing host UIDs requires managing
+  the previous account's ACL explicitly.
+- `ancestor_acl`: use a fresh protected workspace root, deliberately correct its
+  ACL, or opt out. Protected ancestors are never repaired automatically.
+- `scan_limit`: earlier metadata changes may remain. Increase the entry or time
+  budget, or narrow the import, then retry. Depth is limited to 64.
+- ACL inspection or mutation failure: use a filesystem with working POSIX ACLs
+  or manage permissions yourself. Setup does not fall back to world-writable modes.
+
+For example, a larger startup scan uses:
+
+```sh
+FILES_LIMITS='{"subtreeEntries":50000}' LOCAL_WORKSPACE_SCAN_MS=120000 \
+	./scripts/run-runtime-tui.sh --workspace-root "$PWD/native-workspace"
+```
+
+For headless local Compose installations, `./scripts/workspace.sh upload SOURCE
+DESTINATION` makes a shared copy. This helper does not target native TUI
+containers. The destination is relative to the project.
 
 ## Storage and dataset integration
 

@@ -124,7 +124,7 @@ test("host helper forwards named provider values without argv values, ports, hea
 	const conflict = spawnSync("python3", ["-c", ptyRunner, "bash", helper], { env: { ...env, RUNTIME_PROFILE: "managed" }, encoding: "utf8", timeout: 10000 })
 	assert.equal(conflict.status, 2, conflict.stdout + conflict.stderr)
 	assert.match(conflict.stdout, /profile\/frontend conflict/)
-	const run = spawnSync("python3", ["-c", ptyRunner, "bash", helper, "--engine-env", "OPENROUTER_API_KEY"], { env, encoding: "utf8", timeout: 10000 })
+	const run = spawnSync("python3", ["-c", ptyRunner, "bash", helper, "--host-uid", "none", "--engine-env", "OPENROUTER_API_KEY"], { env, encoding: "utf8", timeout: 10000 })
 	assert.equal(run.status, 0, run.stdout + run.stderr)
 	const args = (await fs.readFile(env.CAPTURE, "utf8")).trim().split("\n")
 	assert.ok(args.includes("--no-healthcheck"))
@@ -133,6 +133,198 @@ test("host helper forwards named provider values without argv values, ports, hea
 	assert.equal(args.at(-1), "tui")
 	assert.ok(!args.some((arg) => /do-not-log|\/home|\/root|publish/.test(arg) || ["-p", "-P"].includes(arg)))
 	assert.equal(await fs.readFile(`${env.CAPTURE}.provider`, "utf8"), env.OPENROUTER_API_KEY)
+})
+
+async function hostSharingLauncher(t) {
+	const dir = await fs.mkdtemp("/tmp/opencode/native-host-sharing-")
+	t.after(() => fs.rm(dir, { recursive: true, force: true }))
+	const fake = `#!/usr/bin/env python3
+import json, os, re, sys
+command = os.path.basename(sys.argv[0])
+args = sys.argv[1:]
+with open(os.environ["CAPTURE"] + ".calls", "a") as f:
+ json.dump([command, *args], f); f.write("\\n")
+if command == "uname": print(os.environ.get("FAKE_UNAME", "Linux"))
+elif command == "id": print(os.environ.get("FAKE_UID", "12345"))
+elif args == ["context", "show"]:
+ print(os.environ.get("FAKE_CONTEXT", "default")); sys.exit(int(os.environ.get("FAKE_CONTEXT_STATUS", "0")))
+elif args[:2] == ["context", "inspect"]:
+ print(os.environ.get("FAKE_CONTEXT_JSON", '[{"Endpoints":{"docker":{"Host":"unix:///var/run/docker.sock"}}}]'))
+ sys.exit(int(os.environ.get("FAKE_INSPECT_STATUS", "0")))
+elif args[:1] == ["info"]:
+ if "FAKE_INFO_JSON" in os.environ:
+  print(os.environ["FAKE_INFO_JSON"]) # Fault-injected responses, including missing/malformed fields.
+ else:
+  info = {"OSType":"linux", "OperatingSystem":"Debian GNU/Linux", "SecurityOptions":["name=seccomp,profile=builtin"], "ServerErrors":None}
+  template = args[2]
+  if template == "{{json .}}":
+   print(json.dumps({key:value for key,value in info.items() if key != "ServerErrors" or value})) # Go omitempty.
+  else:
+   print(re.sub(r"{{json \\.([A-Za-z]+)}}", lambda match: json.dumps(info[match[1]]), template))
+ sys.exit(int(os.environ.get("FAKE_INFO_STATUS", "0")))
+elif args[:1] == ["run"]:
+ with open(os.environ["CAPTURE"], "w") as f: json.dump(args, f)
+else: sys.exit(89)
+`
+	for (const name of ["docker", "uname", "id"]) await fs.writeFile(path.join(dir, name), fake, { mode: 0o755 })
+	return async (args = [], extraEnv = {}) => {
+		const capture = path.join(dir, "args")
+		await fs.rm(capture, { force: true })
+		await fs.rm(`${capture}.calls`, { force: true })
+		const result = spawnSync("python3", ["-c", ptyRunner, "bash", path.join(root, "scripts/run-runtime-tui.sh"), ...args], {
+			env: { PATH: `${dir}:${process.env.PATH}`, CAPTURE: capture, LOCAL_WORKSPACE_HOST_UID: "20001", ...extraEnv }, encoding: "utf8", timeout: 10000,
+		})
+		return { ...result, output: result.stdout + result.stderr,
+			args: JSON.parse(await fs.readFile(capture, "utf8").catch(() => "null")),
+			calls: (await fs.readFile(`${capture}.calls`, "utf8").catch(() => "")).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+		}
+	}
+}
+
+function assertHostBootstrap(result, uid) {
+	assert.equal(result.status, 0, result.output)
+	const env = result.args.flatMap((arg, i, args) => arg === "-e" ? [args[i + 1]] : [])
+	assert.deepEqual(env.filter((arg) => arg === "LOCAL_WORKSPACE_HOST_UID" || arg.startsWith("LOCAL_WORKSPACE_HOST_UID=")), [`LOCAL_WORKSPACE_HOST_UID=${uid}`])
+	assert.ok(env.includes("RUNTIME_NATIVE_ENGINE_ENV="), "bootstrap controls are not engine forwarding")
+	assert.ok(!result.args.includes("--user"), "container service identities remain fixed")
+}
+
+test("host sharing auto selects the invoking UID on healthy Docker that omits empty ServerErrors", async (t) => {
+	const run = await hostSharingLauncher(t)
+	for (const args of [[], ["--host-uid", "auto"]]) {
+		const result = await run(["--workspace-root", root, ...args])
+		assertHostBootstrap(result, "12345")
+		assert.match(result.output, /auto.*12345/i)
+		assert.deepEqual(result.calls.map((call) => call[0] === "docker" && call[1] === "info" ? call.slice(0, 2) : call), [
+			["uname", "-s"], ["docker", "context", "show"], ["docker", "context", "inspect", "default"],
+			["docker", "info"], ["id", "-u"], ["docker", ...result.args],
+		])
+	}
+	for (const endpoint of ["unix:///var/run/docker.sock", "unix:///run/docker.sock"]) {
+		assertHostBootstrap(await run(["--workspace-root", root], { FAKE_CONTEXT_JSON: JSON.stringify([{ Endpoints: { docker: { Host: endpoint } } }]), DOCKER_CONTEXT: "", DOCKER_HOST: "" }), "12345")
+	}
+})
+
+test("host sharing mode matrix ignores inherited UID for volumes, opt-out, and explicit UID", async (t) => {
+	const run = await hostSharingLauncher(t)
+	for (const storage of [[], ["--workspace-root", root]]) {
+		for (const mode of [[], ["--host-uid", "auto"], ["--host-uid", "none"], ["--host-uid", "23456"]]) {
+			const result = await run([...storage, ...mode])
+			if (!storage.length && mode.at(-1) === "23456") {
+				assert.equal(result.status, 2, result.output)
+				assert.match(result.output, /requires --workspace-root/)
+				assert.equal(result.args, null)
+			} else {
+				const uid = !storage.length || mode.at(-1) === "none" ? "" : mode.at(-1) === "23456" ? "23456" : "12345"
+				assertHostBootstrap(result, uid)
+				if (!storage.length) assert.match(result.output, /volume transfer mode/i)
+				if (!uid) assert.deepEqual(result.calls, [["docker", ...result.args]], "disabled sharing needs no identity or daemon probes")
+			}
+		}
+	}
+	for (const storage of [[], ["--workspace-root", root]]) {
+		assertHostBootstrap(await run([...storage, "--host-uid", "none"], { DOCKER_HOST: "ssh://private-user:private-password@remote.invalid", FAKE_UID: "0", FAKE_UNAME: "Darwin" }), "")
+	}
+})
+
+test("host sharing auto rejects remote and ambiguous endpoints before selecting a client UID or starting Docker", async (t) => {
+	const run = await hostSharingLauncher(t)
+	const inspect = (endpoint) => JSON.stringify([{ Endpoints: { docker: { Host: endpoint } } }])
+	for (const env of [
+		{ DOCKER_HOST: "ssh://private-user:private-password@remote.invalid" }, { DOCKER_HOST: "tcp://remote.invalid:2375" },
+		{ DOCKER_HOST: "unix:///var/run/docker.sock" }, { DOCKER_CONTEXT: "default" },
+		{ FAKE_CONTEXT: "custom" }, { FAKE_CONTEXT_JSON: inspect("unix:///custom/docker.sock") },
+		{ FAKE_CONTEXT_JSON: "not json" }, { FAKE_CONTEXT_JSON: "[]" }, { FAKE_CONTEXT_JSON: "[{}]" },
+		{ FAKE_CONTEXT_JSON: inspect(123) }, { FAKE_INSPECT_STATUS: "1" }, { FAKE_CONTEXT_STATUS: "1" },
+	]) {
+		for (const mode of [[], ["--host-uid", "auto"]]) {
+			const result = await run(["--workspace-root", root, ...mode], env)
+			assert.equal(result.status, 2, result.output)
+			assert.equal(result.args, null, "must not launch with a remote client's UID")
+			assert.ok(!result.calls.some(([command]) => command === "id"), "do not select the client UID for an unsupported endpoint")
+			assert.match(result.output, /--host-uid.*none/)
+			assert.match(result.output, /--host-uid.*UID/)
+			assert.match(result.output, /volume/i)
+			assert.doesNotMatch(result.output, /private-password|private-user|remote\.invalid/)
+		}
+	}
+})
+
+test("host sharing resolves Docker context/environment precedence and warns for explicit custom endpoints", async (t) => {
+	const run = await hostSharingLauncher(t)
+	for (const [env, expected] of [
+		[{ DOCKER_CONTEXT: "custom", DOCKER_HOST: "ssh://private-user:private-password@remote.invalid" }, [["docker", "context", "inspect", "custom"]]],
+		[{ DOCKER_CONTEXT: "", DOCKER_HOST: "tcp://remote.invalid:2375" }, []],
+		[{ DOCKER_CONTEXT: "", DOCKER_HOST: "", FAKE_CONTEXT: "custom" }, [["docker", "context", "show"], ["docker", "context", "inspect", "custom"]]],
+	]) {
+		const result = await run(["--workspace-root", root, "--host-uid", "23456"], env)
+		assertHostBootstrap(result, "23456")
+		assert.deepEqual(result.calls.slice(0, -1), expected, "numeric override resolves the endpoint without requiring local/daemon qualification")
+		assert.match(result.output, /warn.*daemon-host/i)
+		assert.ok(result.output.includes(await fs.realpath(root)), "warning identifies the resolved bind source")
+		assert.doesNotMatch(result.output, /private-password|private-user|remote\.invalid/)
+	}
+	const unavailable = await run(["--workspace-root", root, "--host-uid", "23456"], { FAKE_CONTEXT_STATUS: "1", FAKE_INFO_STATUS: "1" })
+	assertHostBootstrap(unavailable, "23456")
+	assert.match(unavailable.output, /warn.*daemon-host/i)
+	const auto = await run(["--workspace-root", root], { DOCKER_CONTEXT: "custom", DOCKER_HOST: "ssh://secret@remote.invalid" })
+	assert.equal(auto.status, 2, auto.output)
+	assert.deepEqual(auto.calls, [["uname", "-s"], ["docker", "context", "inspect", "custom"]])
+	assert.match(auto.output, /DOCKER_CONTEXT/)
+})
+
+test("host sharing auto requires complete supported Docker daemon metadata and a Linux client", async (t) => {
+	const run = await hostSharingLauncher(t)
+	const info = { OSType: "linux", OperatingSystem: "Debian GNU/Linux", SecurityOptions: [], ServerErrors: [] }
+	const invalid = ["not json", "null", "[]", JSON.stringify(info).replace(/}$/, ',"extra":NaN}'), ...[
+		{ ...info, OSType: "windows" }, { ...info, OperatingSystem: "DOCKER DESKTOP" },
+		{ ...info, OperatingSystem: null }, { ...info, SecurityOptions: ["name=rootless"] },
+		{ ...info, SecurityOptions: ["name=userns"] }, { ...info, SecurityOptions: [123] },
+		{ ...info, SecurityOptions: "name=seccomp" }, { ...info, ServerErrors: ["daemon failed: secret"] },
+		{ ...info, ServerErrors: "unavailable" },
+		...Object.keys(info).map((key) => Object.fromEntries(Object.entries(info).filter(([name]) => name !== key))),
+	].map((value) => JSON.stringify(value))]
+	for (const env of [{ FAKE_UNAME: "Darwin" }, { FAKE_INFO_STATUS: "1" }, ...invalid.map((value) => ({ FAKE_INFO_JSON: value }))]) {
+		const result = await run(["--workspace-root", root], env)
+		assert.equal(result.status, 2, result.output)
+		assert.equal(result.args, null)
+		assert.ok(!result.calls.some(([command]) => command === "id"))
+		assert.match(result.output, /--host-uid.*none/)
+		assert.match(result.output, /endpoint source=.*context=.*daemon=.*rootless=.*userns=.*Desktop=/)
+		assert.doesNotMatch(result.output, /daemon failed: secret/)
+	}
+	assertHostBootstrap(await run(["--workspace-root", root], { FAKE_INFO_JSON: JSON.stringify({ ...info, ServerErrors: null }) }), "12345")
+})
+
+test("host sharing validates numeric overrides and auto-selected UIDs before container startup", async (t) => {
+	const run = await hostSharingLauncher(t)
+	for (const uid of ["0", "00", "0123", "+123", "-1", "1.0", "123\n", "", "996", "997", "998", "999", "4294967295", "auto-no"]) {
+		for (const args of [["--host-uid", uid], ["--host-uid", "auto"]]) {
+			const result = await run(["--workspace-root", root, ...args], { FAKE_UID: uid })
+			assert.equal(result.status, 2, `${JSON.stringify(uid)}: ${result.output}`)
+			assert.equal(result.args, null)
+			assert.match(result.output, /UID/)
+		}
+	}
+	for (const uid of ["1", "995", "1000", "4294967294"]) assertHostBootstrap(await run(["--workspace-root", root, "--host-uid", uid]), uid)
+})
+
+test("host sharing forwards only present bootstrap budgets and reserves filesystem engine controls", async (t) => {
+	const run = await hostSharingLauncher(t)
+	for (const budgets of [{}, { LOCAL_WORKSPACE_SCAN_MS: "", FILES_LIMITS: "" }, { LOCAL_WORKSPACE_SCAN_MS: "120000", FILES_LIMITS: '{"subtreeEntries":50000}' }]) {
+		const result = await run(["--host-uid", "none"], { ...budgets, FILES_STATE_DIR: "/private", VOXEL_LIMITS: "private" })
+		assertHostBootstrap(result, "")
+		for (const name of ["LOCAL_WORKSPACE_SCAN_MS", "FILES_LIMITS"]) {
+			assert.deepEqual(result.args.filter((arg) => arg === name || arg.startsWith(`${name}=`)), name in budgets ? [`${name}=${budgets[name]}`] : [])
+		}
+		assert.ok(!result.args.some((arg) => /^(FILES_STATE_DIR|VOXEL_LIMITS)(=|$)/.test(arg)))
+	}
+	for (const name of ["LOCAL_WORKSPACE_HOST_UID", "LOCAL_WORKSPACE_SCAN_MS", "LOCAL_WORKSPACE_CUSTOM", "FILES_LIMITS", "FILES_STATE_DIR", "VOXEL_LIMITS"]) {
+		const result = await run(["--host-uid", "none", "--engine-env", name], { [name]: "must-not-forward" })
+		assert.equal(result.status, 2, result.output)
+		assert.match(result.output, /reserved engine environment name/)
+		assert.equal(result.args, null)
+	}
 })
 
 test("native supervisor waits for MCP readiness, invokes standalone, and always stops MCP", async (t) => {

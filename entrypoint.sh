@@ -1547,10 +1547,15 @@ launch_runtime() {
     if [ "${1:-}" = --runtime-lock-held ]; then locked=true; shift; fi
     validate_launch "$@" || return $?
     if [ "$locked" = false ]; then
+        # The lifecycle helper creates private metadata, so reject unsafe sharing
+        # configuration and protected ancestors before entering it.
+        if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
         exec /usr/bin/python3 -I "$RUNTIME_CODE_DIR/lifecycle-lock.py" /workspace "$RUNTIME_PROFILE" /bin/bash /entrypoint.sh --runtime-lock-held "${1:-headless}"
     fi
     # The exec-held descriptor stays open until the owner and its services exit.
     [ -e /proc/self/fd/9 ] || { echo 'runtime lifecycle lock descriptor is missing' >&2; return 2; }
+    # Recheck under ownership, before either profile repairs protected parents.
+    if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
     BOOT_START_MS=$(date +%s%3N 2>/dev/null || echo 0)
     BOOT_LAST_MS="$BOOT_START_MS"
     if [ "$RUNTIME_PROFILE" = native ]; then
@@ -1558,7 +1563,6 @@ launch_runtime() {
         native_main
         return $?
     fi
-    if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
     install_managed_traps
     main
 }

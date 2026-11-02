@@ -43,6 +43,14 @@ native_main() {
     RUNTIME_MCP_PORT=7710
     # All errors before child startup remain setup failures, with no drain writes.
     prepare_protected_parents
+    # Only create the project root; never recursively re-own host project inputs.
+    ensure_real_dir "$WORKSPACE_DIR"
+    if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then
+        # The provisioner owns root mode/ACL repair, including metadata-noop boots.
+        run_local_workspace provision
+    else
+        chmod 2775 "$WORKSPACE_DIR"
+    fi
     root_directory "$RUN_DIR" 0700
     root_directory "$ROOT_LOG_DIR" 0755
     root_directory "$RUNTIME_STATE_ROOT/native" 0755
@@ -50,9 +58,6 @@ native_main() {
     ENGINE_STATE_DIR="$RUNTIME_STATE_ROOT/native/opencode"
     ensure_real_dir "$ENGINE_STATE_DIR"
     chmod 0700 "$ENGINE_STATE_DIR"
-    # Only create the project root; never recursively re-own host project inputs.
-    ensure_real_dir "$WORKSPACE_DIR"
-    chmod 2775 "$WORKSPACE_DIR"
     local processing_root="$RUNTIME_STATE_ROOT/native/processing/$PROJECT_ID"
     if [ -n "${RUNTIME_NATIVE_PROCESSING_MODEL:-}" ]; then
         root_directory "$RUNTIME_STATE_ROOT/native/processing" 0755
