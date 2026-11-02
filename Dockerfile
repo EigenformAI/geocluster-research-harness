@@ -24,9 +24,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /usr/local/bin/uv
 WORKDIR /build
 ARG PREPROCESSING_BUNDLE_DIGEST
+ARG PREPROCESSING_BUILD_MODE=release
+COPY scripts/preprocessing-bundle.py scripts/preprocessing-release.json /recipe/
 COPY --from=preprocessing_bundle source.tar identity.json ./
 RUN test -n "$PREPROCESSING_BUNDLE_DIGEST" \
     && printf '%s  source.tar\n' "$PREPROCESSING_BUNDLE_DIGEST" | sha256sum --check \
+    && python3 /recipe/preprocessing-bundle.py --verify --output /build --mode "$PREPROCESSING_BUILD_MODE" \
     && tar -xf source.tar \
     && uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt \
     && uv venv /build/build-env --python /usr/bin/python3 \
@@ -45,8 +48,13 @@ RUN test -n "$PREPROCESSING_BUNDLE_DIGEST" \
 
 FROM node:20-bookworm-slim
 ARG PREPROCESSING_BUNDLE_DIGEST
+ARG PREPROCESSING_BUILD_MODE=release
+ARG PREPROCESSING_SOURCE_REVISION
 ENV PREPROCESSING_BUNDLE_DIGEST=${PREPROCESSING_BUNDLE_DIGEST}
+ENV PREPROCESSING_BUILD_MODE=${PREPROCESSING_BUILD_MODE}
 LABEL org.geocluster.preprocessing.bundle.sha256=${PREPROCESSING_BUNDLE_DIGEST}
+LABEL org.geocluster.preprocessing.source.mode=${PREPROCESSING_BUILD_MODE}
+LABEL org.geocluster.preprocessing.source.revision=${PREPROCESSING_SOURCE_REVISION}
 
 # Labels for container identification
 LABEL maintainer="GeoCluster AI Team"
@@ -71,11 +79,13 @@ LABEL org.opencontainers.image.licenses="Apache-2.0"
 # - poppler-utils: model-independent PDF text extraction from authorized read bytes
 # - build-essential: build the pinned SQLite binding and safe-fs helper
 # - libgomp1: OpenMP for the shared MCP (NUMBA_THREADING_LAYER=omp); explicit, it only arrived transitively
+# - util-linux: descriptor-based flock lease for the native document bridge writer
 RUN apt-get update && apt-get install -y \
     rclone \
     inotify-tools \
     curl \
     procps \
+    util-linux \
     unzip \
     zip \
     git \

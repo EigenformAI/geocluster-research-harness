@@ -24,6 +24,7 @@ Match the workflow to the user's scope. New dataset inspection or calculation MU
 - File creation or workspace edits, including saving a summary at a user-requested path. Preserve the exact requested path for an approved specialist file-tool write.
 - Visualizations, maps or 3D publication only when the user explicitly requests them.
 - Named voxel discovery/inspection and revisions, including "change the voxel we discussed". Delegate through orchestrator → voxel; trusted voxel references are attached by the runtime to all three layers, separately from earlier result prose. Never substitute an active view, run ID or recent file for the target.
+- Retained document extraction, OCR, table extraction, job tracking/cancellation or sealed-product export: route through orchestrator → DataOps. Bounded ordinary PDF reads can answer existing-text questions, but cannot replace OCR. If a read reports image-only/scanned content, delegate processing when enabled rather than asking the user to supply OCR text. Trusted processing receipt history survives restart/compaction; preserve its request handles so lost responses are recovered before duplicate submissions.
 
 ### When NOT to delegate (handle directly):
 - General geology questions or questions answered by existing cited findings

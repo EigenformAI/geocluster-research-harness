@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import signal
 import sys
@@ -28,10 +29,55 @@ MCP_URL = 'http://127.0.0.1:8765/mcp'
 MAX_HANDOFF = 4 * 1024 * 1024
 BUILTINS = json.loads(Path(__file__).with_name('native-extraction-plugins.json').read_text())
 DENY = [{'action': '*', 'resource': '*', 'effect': 'deny'}]
+FAILURE_ACTIONS = {
+    'startup_failed': 'inspect_retained_state', 'startup_timeout': 'inspect_retained_state',
+    'startup_interrupted': 'restart_explicitly', 'selected_model_unavailable': 'check_model_and_connection',
+    'engine_context_unavailable': 'check_engine_context', 'processor_exited': 'inspect_retained_state',
+    'dependency_exited': 'restart_explicitly',
+}
 
 
 class DrainRequested(Exception):
     pass
+
+
+class NativeFailure(Exception):
+    def __init__(self, code):
+        self.code = code
+
+
+def emit(value):
+    with contextlib.suppress(OSError):
+        print(json.dumps(value, separators=(',', ':')), flush=True)
+
+
+def startup_failure(code, stage, model, reason=None):
+    code = code if code in FAILURE_ACTIONS else 'startup_failed'
+    allowed_reasons = {*FAILURE_ACTIONS, 'readiness_unavailable'} - {'startup_failed'}
+    return {'code': code, 'stage': stage if stage in ('launch', 'extraction-context', 'reconciliation', 'processor', 'running') else 'launch',
+            'model': model if len(model) <= 256 and re.fullmatch(r'[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+(?:#[A-Za-z0-9._-]+)?', model) else 'redacted',
+            'reason': reason if reason in allowed_reasons else code if code in allowed_reasons else 'readiness_unavailable',
+            'action': FAILURE_ACTIONS[code]}
+
+
+async def wait_readiness(observe, on_failure, process=None):
+    # Catalog initialization is asynchronous. These observations never invoke a model.
+    while process is None or process.returncode is None:
+        try:
+            value = await observe()
+            if not isinstance(value, dict):
+                raise ValueError('Invalid readiness')
+            if value.get('ready') is True:
+                return
+            reason = value.get('reason')
+            code = ('selected_model_unavailable' if reason == 'selected_model_unavailable' else
+                    'engine_context_unavailable' if value.get('executionReady') is False else 'startup_failed')
+            on_failure(code, reason if reason == 'selected_model_unavailable' else
+                       'engine_context_unavailable' if code == 'engine_context_unavailable' else 'readiness_unavailable')
+        except (OSError, ValueError, TimeoutError):
+            pass  # A transport miss cannot erase the last meaningful observation.
+        await asyncio.sleep(.1)
+    raise NativeFailure('processor_exited')
 
 
 def private_directory(path):
@@ -269,7 +315,7 @@ class ParentLease:
                     await work
                 if self.stopped.is_set():
                     raise DrainRequested()
-                raise ValueError('Startup timed out')
+                raise TimeoutError('Startup timed out')
             return await work
         finally:
             stop.cancel()
@@ -309,7 +355,11 @@ def capabilities(token):
         raw = response.read(MAX_HANDOFF + 1)
         if len(raw) > MAX_HANDOFF:
             raise ValueError('Oversized capabilities')
-        return json.loads(raw).get('dependency', {}).get('ready') is True
+        value = json.loads(raw)
+        dependency = value.get('dependency') if isinstance(value, dict) else None
+        if not isinstance(dependency, dict):
+            raise ValueError('Invalid capabilities')
+        return dependency
 
 
 async def run(args):
@@ -318,15 +368,24 @@ async def run(args):
     state = private_directory(args.state_dir.resolve())
     descriptor_path = state / 'engine.json'
     service = GuardedService(state / 'service', args.engine_bin)
-    owner = server = None
+    owner = server = probe = None
     lock = None
+    owns_state = False
     result = 1
-    complete = False
     stage = 'launch'
     service_code = None
+    failure = readiness = None
+    cleanup = {'complete': True, 'failures': []}
+    def observe_failure(code, reason):
+        nonlocal readiness
+        diagnostic = startup_failure(code, stage, args.model, reason)
+        if diagnostic != readiness:
+            readiness = diagnostic
+            emit({'readiness': diagnostic})
     try:
         lock = os.open(state / 'owner.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        owns_state = True
         for stale in (descriptor_path, state / 'drain.json'):
             with contextlib.suppress(FileNotFoundError):
                 stale.unlink()
@@ -348,17 +407,16 @@ async def run(args):
         if any(g not in owner.state['fencedGenerations'] for g in owner.state['pendingGenerations']):
             raise ValueError('Prior service writer remains unfenced')
         if external is not None:
+            stage = 'extraction-context'
             probe = OpenCodeServerEngine(external, input_roots=[])
-            try:
-                if (await lease.startup(probe.ready())).get('ready') is not True:
-                    raise ValueError('External extraction context unavailable')
-                descriptor = copy.deepcopy(probe.descriptor)
-            finally:
-                await probe.close()
+            await lease.startup(wait_readiness(probe.ready, observe_failure))
+            readiness = None
+            descriptor = copy.deepcopy(probe.descriptor)
         else:
             stage = 'extraction-context'
             extraction, plugin = extraction_context(state, args.model)
-            env = {**launch['engineEnv'], TOKEN_ENV: token}
+            env = dict(launch['engineEnv'])
+            env.pop(TOKEN_ENV, None)
             server = NativeServer(state / 'server', args.engine_bin, env, args.workspace.resolve(), extraction, plugin)
             descriptor = await lease.startup(server.start(recovery=owner.recovery()))
             for identity in server.confirmed_dead:
@@ -384,73 +442,104 @@ async def run(args):
             '--workspace', str(args.workspace.resolve()), '--engine-descriptor', str(descriptor_path), '--model', args.model,
             '--host', '127.0.0.1', '--port', '8765', '--token-env', TOKEN_ENV]
         await lease.startup(service.start_service(command, processor_environment(token), args.workspace.resolve()))
-        async def ready():
-            while service.process.returncode is None:
-                try:
-                    if await asyncio.to_thread(capabilities, token):
-                        return
-                except (OSError, ValueError):
-                    pass
-                await asyncio.sleep(.1)
-            raise ValueError('Processor exited before readiness')
-        await lease.startup(ready())
-        handoff = ({'borrowed': True, 'mcpToken': token} if external is not None else
+        readiness = None
+        async def observe():
+            return await asyncio.to_thread(capabilities, token)
+        await lease.startup(wait_readiness(observe, observe_failure, service.process))
+        readiness = None
+        handoff = ({'borrowed': True} if external is not None else
                    {'url': descriptor['serverUrl'], 'password': descriptor['password'], 'engineInstanceId': descriptor['engineInstanceId']})
-        print(json.dumps(handoff, separators=(',', ':')), flush=True)
+        handoff['processorToken'] = token
+        emit(handoff)
         stage = 'running'
         while not lease.stopped.is_set():
             if service.process.returncode is not None or (server is not None and server.process.returncode is not None):
-                raise ValueError('Native processing dependency exited; restart explicitly')
+                raise NativeFailure('dependency_exited')
             await lease.startup(owner.reconcile())
             await asyncio.sleep(.1)
         result = 0
     except DrainRequested:
         result = 0 if stage == 'running' else 1
-    except (Exception, asyncio.CancelledError):
-        print('Native processing unavailable at ' + stage + '; check /connect, shared provider configuration, and retained ownership evidence.', file=sys.stderr)
+        if result:
+            failure = readiness or startup_failure('startup_interrupted', stage, args.model)
+    except (Exception, asyncio.CancelledError) as error:
+        failure = (readiness if isinstance(error, TimeoutError) and readiness else
+                   startup_failure(error.code if isinstance(error, NativeFailure) else
+                                   'startup_timeout' if isinstance(error, TimeoutError) else 'startup_failed', stage, args.model))
     finally:
         lease.stop()
-        with contextlib.suppress(FileNotFoundError):
-            descriptor_path.unlink()
-        if owner:
-            owner.descriptor = None
-        try:
+        if failure:
+            emit({'failure': failure})
+        def failed(component):
+            cleanup['complete'] = False
+            entry = {'component': component, 'code': 'cleanup_unverified'}
+            if entry not in cleanup['failures']:
+                cleanup['failures'].append(entry)
+        async def attempt(component, work):
+            try:
+                await work()
+            except (Exception, asyncio.CancelledError):
+                failed(component)
+        async def remove_descriptor():
+            if owns_state:
+                with contextlib.suppress(FileNotFoundError):
+                    descriptor_path.unlink()
+            if owner:
+                owner.descriptor = None
+        await attempt('descriptor', remove_descriptor)
+        async def close_processor():
+            nonlocal service_code
             # TERM closes listener/admission and settles while the engine is still alive.
-            if service.process is not None:
-                service.terminate_leader()
-                try:
-                    await asyncio.wait_for(asyncio.shield(service.process.wait()), lease.remaining())
-                    service_code = service.process.returncode
-                    # The installed guardian returns the child's negative signal
-                    # through sys.exit(), whose shell-visible encoding is 256-signum.
-                    complete = service.process.returncode in (0, -signal.SIGTERM, 256 - signal.SIGTERM)
-                except TimeoutError:
-                    complete = False
-                # Lease loss fences every descendant; lock must remain held through actual death.
+            try:
+                if service.process is not None:
+                    service.terminate_leader()
+                    try:
+                        await asyncio.wait_for(asyncio.shield(service.process.wait()), max(.001, lease.remaining()))
+                        service_code = service.process.returncode
+                        # Guardian encodes a child's negative signal as 256-signum.
+                        if service_code not in (0, -signal.SIGTERM, 256 - signal.SIGTERM):
+                            failed('processor')
+                    except (Exception, asyncio.CancelledError):
+                        failed('processor')
+            finally:
+                # Even a failed TERM/wait must surrender the descendant lease.
                 await asyncio.wait_for(service.close(), max(.001, lease.remaining()))
-            else:
-                complete = result == 0
-            if owner and service.process is None:
-                settled = await asyncio.wait_for(owner.reconcile(force=True), max(.001, lease.remaining()))
-                complete = complete and settled
-        except (Exception, asyncio.CancelledError):
-            complete = False
-        finally:
+        await attempt('processor', close_processor)
+        try:
             if service.lease_fd is not None:
                 os.close(service.lease_fd)
                 service.lease_fd = None
+        except OSError:
+            failed('processor')
+        async def reconcile():
+            if owner:
+                settled = await asyncio.wait_for(owner.reconcile(force=True), max(.001, lease.remaining()))
+                if not settled:
+                    failed('ownership')
+        await attempt('ownership', reconcile)
+        async def close_probe():
+            if probe is not None:
+                await asyncio.wait_for(probe.close(), max(.001, lease.remaining()))
+        await attempt('probe', close_probe)
+        async def close_engine():
             if server is not None:
                 try:
                     await asyncio.wait_for(server.close(), max(.001, lease.remaining()))
-                except (Exception, asyncio.CancelledError):
-                    complete = False
+                finally:
                     if server.lease_fd is not None:
                         os.close(server.lease_fd)
                         server.lease_fd = None
-            atomic_json(state / 'drain.json', {'complete': bool(complete), 'stage': stage, 'serviceExitCode': service_code})
+        await attempt('engine', close_engine)
+        try:
+            if owns_state:
+                atomic_json(state / 'drain.json', {'invocationId': args.invocation_id, 'complete': cleanup['complete'],
+                            'stage': stage, 'serviceExitCode': service_code, 'failure': failure, 'cleanup': cleanup})
+        except Exception:
+            failed('receipt')
+        finally:
             if lock is not None:
                 os.close(lock)
-    return result if complete else 1
+    return result if cleanup['complete'] else 1
 
 
 def main():
@@ -459,8 +548,10 @@ def main():
     parser.add_argument('--workspace', type=Path, required=True)
     parser.add_argument('--model', required=True)
     parser.add_argument('--drain-timeout-ms', type=int, required=True)
+    parser.add_argument('--invocation-id', type=uuid.UUID, required=True)
     parser.add_argument('--engine-bin', type=Path, default=Path('/usr/local/bin/opencode'))
     args = parser.parse_args()
+    args.invocation_id = str(args.invocation_id)
     if args.drain_timeout_ms <= 0:
         parser.error('drain timeout must be positive')
     try:

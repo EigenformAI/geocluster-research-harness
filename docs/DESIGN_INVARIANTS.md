@@ -22,7 +22,11 @@ permission rules belong in executable configuration, not in this document.
 - **L3-1, L3-2:** New tools receive no layered agent access until deliberately
   assigned. Exact allowlists prevent accidental access through substring matches.
   Within the hierarchy, retained document processing belongs to DataOps so that
-  source preparation and extraction have one responsible specialist.
+  source preparation and extraction have one responsible specialist. Plugin tools
+  replace the direct processor MCP rather than exposing both interfaces. Geology
+  and Orchestrator retain no processing execution tools. Report Analysis receives
+  only result, text, and table reads under RE-2. Exact runtime caller checks and
+  context-time tool filtering enforce that assignment independently of prompts.
 - **L3-3:** Transform prefers domain tools for simple operations and saves scripts
   for operations that need them. Automatic scripts remain in the conversation's
   output folder so their results are reproducible.
@@ -37,7 +41,8 @@ permission rules belong in executable configuration, not in this document.
   dependency.
 
 Standard mode is a separate coding mode. It does not use the specialist hierarchy.
-Its file tools still follow the protected-path and edit-approval boundaries below.
+Its broad tool access includes processing. Its file tools still follow the
+protected-path and edit-approval boundaries below.
 
 ## Preserve source and output meaning
 
@@ -53,7 +58,10 @@ Its file tools still follow the protected-path and edit-approval boundaries belo
   the current run's `_orchestrator/` records, or paths outside the workspace.
   Extended's shared install record is the explicit automatic-write exception.
   Retained document jobs and results remain private processor state accessed by
-  tools. Automatic exports, unlike retained results, follow the run-folder rule.
+  tools. Model processing exports accept only a basename inside the trusted root's
+  `runs/<id>/results/`. An outside destination requires separate approval and causes
+  no write. Native operators can select an ordinary CLI destination with `--out`.
+  Sealed-product exports verify bytes and hashes without changing extraction quality.
 - **L3-6:** Canonical voxel operations belong only to the Voxel specialist and
   use exact tool assignment. All geological voxel requests follow Layer 1 →
   orchestrator → Voxel. Runtime-issued workspace identity and conversation scope
@@ -70,6 +78,13 @@ head. A conflict requires inspecting and preparing against the new head.
 compact extracted prose, tables, and figure descriptions directly. **RE-3:**
 Citations distinguish observations, interpretation, and assumptions, including
 page and figure evidence.
+
+Bounded processing text and table reads identify the immutable artifact, source
+hash, pages, and exact range. Result summaries and request receipts do not prove
+content access. Report Analysis performs its own content reads rather than treating
+a specialist's summary as original evidence. Native citation tokens carry that
+provenance, but they do not activate a gateway citation guard or credit an ordinary
+read of the current PDF path.
 
 **RE-4:** For gateway-managed turns, the gateway checks cited files against
 successful reads by the root agent and its depth-one children. It requests one

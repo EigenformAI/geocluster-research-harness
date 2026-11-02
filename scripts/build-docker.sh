@@ -1,14 +1,19 @@
 #!/bin/bash
 # =============================================================================
 # GeologyIDE Docker Build Script
-# Builds the production Docker image
+# Builds an image with pinned-release or explicit development processor sources.
 # =============================================================================
 
 set -e
 
 # Configuration
 IMAGE_NAME="${IMAGE_NAME:-geocluster-runtime}"
-IMAGE_TAG="${IMAGE_TAG:-latest}"
+PREPROCESSING_BUILD_MODE="${PREPROCESSING_BUILD_MODE:-release}"
+case "$PREPROCESSING_BUILD_MODE" in
+    release) IMAGE_TAG="${IMAGE_TAG:-latest}" ;;
+    development) IMAGE_TAG="${IMAGE_TAG:-local}" ;;
+    *) echo "PREPROCESSING_BUILD_MODE must be release or development" >&2; exit 1 ;;
+esac
 REGISTRY="${REGISTRY:-}"
 NO_CACHE="${NO_CACHE:-false}"
 
@@ -56,16 +61,25 @@ log_info "Build sha: ${BUILD_SHA}"
 
 # Build the image
 log_info "Starting Docker build..."
-# The current processor tree is captured, not git archive: local extraction fixes
-# must be part of the pinned artifact. Only production files enter this context.
-PROCESSOR_SOURCE="${PREPROCESSING_SOURCE_DIR:?Set PREPROCESSING_SOURCE_DIR to the reviewed processor checkout}"
-PROCESSOR_BUNDLE="${PREPROCESSING_BUILD_CONTEXT:-$(mktemp -d)}"
-python3 "$SCRIPT_DIR/preprocessing-bundle.py" --source "$PROCESSOR_SOURCE" --output "$PROCESSOR_BUNDLE" >/dev/null
+# Release builds verify both the reviewed commit and exact production bytes.
+# Explicit development builds retain working-tree changes without claiming a release.
+PROCESSOR_SOURCE="${PREPROCESSING_SOURCE_DIR:?Set PREPROCESSING_SOURCE_DIR to the processor checkout}"
+BUILD_TMP="${TMPDIR:-/tmp}"
+if [ -z "${TMPDIR:-}" ] && [ -d /tmp/opencode ]; then BUILD_TMP=/tmp/opencode; fi
+PROCESSOR_BUNDLE="${PREPROCESSING_BUILD_CONTEXT:-$(mktemp -d "$BUILD_TMP/preprocessing-bundle.XXXXXX")}"
+python3 "$SCRIPT_DIR/preprocessing-bundle.py" --source "$PROCESSOR_SOURCE" --output "$PROCESSOR_BUNDLE" --mode "$PREPROCESSING_BUILD_MODE" >/dev/null
 PROCESSOR_DIGEST="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["digest"])' "$PROCESSOR_BUNDLE/identity.json")"
-log_info "Processor working-tree bundle SHA-256: $PROCESSOR_DIGEST"
+PROCESSOR_REVISION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sourceRevision"])' "$PROCESSOR_BUNDLE/identity.json")"
+log_info "Processor source mode: $PREPROCESSING_BUILD_MODE"
+log_info "Processor bundle SHA-256: $PROCESSOR_DIGEST"
+if [ "$PREPROCESSING_BUILD_MODE" = development ]; then
+    log_warn "Local development processor bytes; not a verified release source."
+fi
 docker buildx build --load $BUILD_OPTS \
     --build-context preprocessing_bundle="$PROCESSOR_BUNDLE" \
     --build-arg PREPROCESSING_BUNDLE_DIGEST="$PROCESSOR_DIGEST" \
+    --build-arg PREPROCESSING_BUILD_MODE="$PREPROCESSING_BUILD_MODE" \
+    --build-arg PREPROCESSING_SOURCE_REVISION="$PROCESSOR_REVISION" \
     --build-arg RUNTIME_BUILD_SHA="$BUILD_SHA" \
     -t "${IMAGE_NAME}:${IMAGE_TAG}" \
     -f Dockerfile \

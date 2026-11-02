@@ -19,14 +19,17 @@ export class PreprocessingClient {
 	constructor(config = {}) {
 		this.port = config.port ?? 8765; this.token = config.token || ""
 		this.jsonBytes = config.jsonBytes ?? 16 * 1024 * 1024; this.transportMs = config.transportMs ?? 15000
+		this.storeScope = config.storeScope || config.expectedStoreScope || null
 		if (![this.port, this.jsonBytes, this.transportMs].every((n) => Number.isSafeInteger(n) && n > 0) || this.port > 65535 || typeof this.token !== "string" || /[\r\n]/.test(this.token)) throw fail(503, "invalid_preprocessing_config", "configuration", false, "Configure a loopback port, private token, and positive JSON/transport limits.")
 	}
 	async request(endpoint, { method = "GET", body, key, headers, streaming = false } = {}) {
+		if (!["GET", "HEAD"].includes(method)) await this.checkStoreScope()
 		const operation = endpoint.includes("/products/") ? "download" : endpoint.includes("/tables/") ? "rows" : endpoint.endsWith("/results") ? "results" : endpoint.endsWith("/reconcile") ? "recovery" : endpoint.endsWith("/cancel") ? "cancel" : "jobs"
 		const upstreamHeaders = new Headers({ accept: "application/json" })
 		if (this.token) upstreamHeaders.set("authorization", `Bearer ${this.token}`)
 		if (body !== undefined) upstreamHeaders.set("content-type", "application/json")
 		if (key) upstreamHeaders.set("idempotency-key", key)
+		if (!["GET", "HEAD"].includes(method)) upstreamHeaders.set("x-processing-store-scope", this.storeScope)
 		if (streaming) {
 			const selected = new Headers(headers)
 			for (const name of downloadHeaders) if (selected.has(name)) upstreamHeaders.set(name, selected.get(name))
@@ -101,10 +104,18 @@ export class PreprocessingClient {
 	}
 	tooLarge(operation) { return fail(413, "result_metadata_too_large", operation, false, `Raise the adapter JSON ceiling above ${this.jsonBytes} bytes and retry; metadata was not truncated.`) }
 	capabilities() { return this.request("/capabilities") }
+	bindStoreScope(scope) {
+		if (typeof scope !== "string" || !/^[A-Za-z0-9_.:-]{1,128}$/.test(scope)) throw fail(502, "processor_protocol_error", "identity")
+		if (this.storeScope && this.storeScope !== scope) throw fail(409, "processing_store_changed", "identity", false, "Restore the original processor store; never replay retained requests into a replacement store.")
+		this.storeScope = scope
+		return scope
+	}
+	async checkStoreScope() { const value = await this.capabilities(); return this.bindStoreScope(value.storeScope) }
 	lookup(key) { return this.request(`/jobs?submissionKey=${encodeURIComponent(key)}`).then((value) => value.job) }
 	submit(key, body) { return this.request("/jobs", { method: "POST", key, body }) }
 	get(id) { return this.request(`/jobs/${encodeURIComponent(identifier(id, "processor job ID"))}`) }
 	cancel(id) { return this.request(`/jobs/${encodeURIComponent(identifier(id, "processor job ID"))}/cancel`, { method: "POST" }) }
+	cancelSubmission(key, request) { return this.request(`/submissions/${encodeURIComponent(identifier(key, "submission key"))}/cancel`, { method: "POST", body: { request } }) }
 	results(id) { return this.request(`/jobs/${encodeURIComponent(identifier(id, "processor job ID"))}/results`) }
 	rows(id, tableId, { offset = 0, limit = 100 } = {}) { return this.request(`/jobs/${encodeURIComponent(identifier(id))}/tables/${encodeURIComponent(identifier(tableId))}/rows?offset=${offset}&limit=${limit}`) }
 	product(id, productId, { method = "GET", headers } = {}) {
