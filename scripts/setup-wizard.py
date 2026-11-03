@@ -188,7 +188,7 @@ class Wizard:
         return 'Manual setup: ' + self.public_guide('README.md#' + section)
 
     def opening(self):
-        self.say("Set up GeoCluster\n\nLet's get your workspace ready. We'll prepare GeoCluster, choose a home\nfor your files, and help you start with sample data or your own work.\n\nYour workspace contains data folders, saved results, conversations, and provider\nconnections. Keep the recommended choices to try Wattle Creek sample data.\nYou'll connect your model provider when GeoCluster opens.\n\nPress Enter for the recommended choice, ? for more options, b to go back,\nor q to leave setup.\n")
+        self.say("Set up GeoCluster\n\nLet's get your workspace ready. We'll prepare GeoCluster, choose a home\nfor your files, and help you start with sample data or your own work.\n\nKeep the recommended choices to try GeoCluster with Wattle Creek sample data.\nYou'll connect your model provider when GeoCluster opens.\n\nPress Enter for the recommended choice, ? for more options, b to go back,\nor q to leave setup.\n")
         self.saved = self.support.load_profile()
         pending = self.support.load_pending()
         if self.saved:
@@ -461,7 +461,7 @@ class Wizard:
         return storage['name'] if storage['kind'] == 'volume' else storage['path']
 
     def storage_help(self):
-        self.say('A workspace keeps data folders, results, conversations, and provider connections together.\nKeep the workspace name to return to the same work.\nChoose another name for an independent workspace. Only one GeoCluster session\ncan use a workspace at a time.')
+        self.say('A workspace keeps your files, conversations, and provider connections together.\nKeep the workspace name to return to the same work.\nChoose another name for a separate workspace. Only one GeoCluster session\ncan use a workspace at a time.')
         storage = self.plan.get('storage') or {}
         name = storage.get('name', VOLUME)
         while True:
@@ -478,7 +478,7 @@ class Wizard:
 
     def choose_storage(self):
         self.heading(3, 'Choose where files are kept')
-        self.say('Your workspace keeps data folders, results, conversations, and provider connections together.\n')
+        self.say('Your workspace keeps your files, conversations, and provider connections together.\n')
         storage = self.plan.get('storage') or {}
         default = 2 if storage.get('kind') == 'bind' else 1
         while True:
@@ -508,7 +508,7 @@ class Wizard:
                 continue
             base = self.support.allowed_host_base()
             suggested = storage.get('path', str(base / 'default'))
-            self.say(f"We'll create a dedicated workspace for your work.\nThe suggested location is {suggested}.\nYour data folders and results live under default/ inside it.\n")
+            self.say(f"We'll create a dedicated folder for your workspace.\nThe suggested location is {suggested}.\nYour data and results live in its default/ folder.\n")
             try:
                 while True:
                     value = self.ask(f'Workspace folder [{suggested}]:', default=suggested,
@@ -664,7 +664,7 @@ class Wizard:
                         destination = self.destination('wattle-creek', reserved=recorded)
                     self.plan['starter'] = {'kind': 'samples', 'destination': destination} if destination else {'kind': 'existing', 'destination': None}
                     if destination:
-                        self.say(f"You'll find the sample data in the workspace folder:\n  {destination}/")
+                        self.say(f"You'll find the samples in:\n  {destination}/")
                 else:
                     self.plan['starter'] = {'kind': kind, 'destination': None}
                     self.say("We'll prepare the workspace so you can add your data when you're ready." if kind == 'none' else 'Continuing with your existing files.')

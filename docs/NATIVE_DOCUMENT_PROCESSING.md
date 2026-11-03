@@ -17,8 +17,8 @@ conversation model. Connections persist in this retained container workspace.
 Host OpenCode accounts are not imported automatically.
 
 For a custom processing provider, put its declaration in ordinary native user
-configuration. A declaration present only in a data folder is not
-automatically copied into the extraction context. The writable native XDG config
+configuration. A declaration present only in a data folder is not automatically
+copied into the extraction context. The writable native XDG config
 root is `/workspace/.runtime/native/opencode/config`.
 
 ## Enable processing
@@ -108,13 +108,11 @@ workspace options used by the launcher:
 
 The wrapper attaches to exactly one matching running container. It never starts
 a container, selects a model, connects an account, or opens processor storage.
-For a nondefault storage location, put `--workspace-root DIRECTORY` or
-`--workspace-volume NAME` before the command. Add
-`--container ID` to disambiguate matching containers. Source and output paths are
-relative to the workspace content directory, not your host shell. For example,
-use `reports/survey.pdf` for a source in the `reports/` data folder. Native content
-lives at `/workspace/default/`, or `<workspace>/default/` on a bind-mounted Docker
-host. Arbitrary local folders are not discovered automatically.
+For another workspace, put `--workspace-root DIRECTORY` or
+`--workspace-volume NAME` before the command. Add `--container ID` if more than one
+container matches. Source and output paths are relative to `/workspace/default/`
+inside GeoCluster, not your host shell. For example, use `reports/survey.pdf` for
+a file in the `reports/` folder.
 
 Result summaries retain quality fields and provide inventory pagination. Use
 `--full-manifest` for the unpaged manifest. Bridge JSON responses have a 2 MiB

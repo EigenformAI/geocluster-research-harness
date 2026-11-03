@@ -60,13 +60,11 @@ opens. Model usage follows that provider's pricing.
 	```
 
 For a first try, press Enter through the recommended choices. The guide prepares
-GeoCluster and keeps your workspace in Docker-managed storage. Wattle Creek
-samples are optional starting data, not a separate environment.
+GeoCluster and sets up a workspace in Docker-managed storage with Wattle Creek
+sample data.
 
-The guide has six steps: checks, image, storage, starting files, approval and
-application, and launch. Copy your own data folder, add the optional samples, or
-start without data and add files later. Use `?` to explore image and storage
-options. Returning to an existing workspace continues with its files.
+You can also copy your own data folder or add files later. Use `?` to explore
+image and storage options. Returning to an existing workspace continues with its files.
 
 When your workspace is ready, open GeoCluster from the guide. Follow
 [Ask about the folder](#ask-about-the-folder) to connect your provider and try a
@@ -84,10 +82,8 @@ first-use instructions in `.geocluster/next-steps.txt`.
 To change the saved choices, run `./scripts/setup.sh` again. For custom launch
 options, use the [explicit launcher](#use-the-explicit-launcher).
 
-Settings from the older project-selection setup are not reused. If setup reports
-incompatible settings, move the checkout's `.geocluster` directory aside and run
-setup again. Keep those settings and the workspace files. Setup does not migrate,
-merge, or discover other data directories.
+If setup reports older settings, follow its instructions to move `.geocluster`
+aside and run setup again. Keep your workspace files. Setup does not move them.
 
 ## Add a data folder
 
@@ -110,13 +106,12 @@ surveys for spatial analysis. Name a folder in your question to have the agent
 inspect its files.
 
 Data folders and saved results live at `/workspace/default/` inside GeoCluster.
-Private runtime state, including conversations and provider connections, lives
-alongside that content directory under `/workspace/.runtime/`.
+The workspace also keeps conversations and provider connections separately from
+your data.
 With remote Docker, imports transfer your data to that Docker host.
 
-The default Docker volume does not expose arbitrary folders on your computer.
-Import a local data folder to use it there. Creating a local folder does not make
-GeoCluster discover or open it automatically.
+GeoCluster does not open local folders automatically. Use import to copy them
+into Docker-managed storage.
 
 For direct access to files on your computer,
 [use a dedicated host folder](#use-a-dedicated-host-folder). See
@@ -217,9 +212,7 @@ ordinary workspace content, not provider connections or private runtime state.
 Transfers reject links and mounted subtrees. They are not permission-preserving
 backups.
 Imports and exports require exclusive access to the workspace. Run
-`./scripts/workspace-files.sh --help` for explicit storage options. Explicit
-transfers require `--workspace-volume NAME` or `--workspace-root DIRECTORY`.
-An optional `--image IMAGE` uses that explicit storage, never saved choices.
+`./scripts/workspace-files.sh --help` for explicit storage options.
 
 ## Configure the runtime
 
@@ -253,7 +246,6 @@ Run `./scripts/run-runtime-tui.sh --help` for custom workspace, provider-environ
 and processing-model options. This launcher does not read saved setup choices.
 Reuse the same workspace options on every explicit launch. Add
 `--require-existing-workspace` to refuse creation when its data folder is missing.
-Native commands use one workspace with data folders, without a project name or selector.
 
 #### Use a dedicated host folder
 
@@ -270,11 +262,9 @@ sudo install -d -o root -g root -m 0755 "$workspace"
 	--workspace-root "$workspace"
 ```
 
-Data folders and saved results are at `<workspace>/default/` on the Docker host,
-where `<workspace>` is the dedicated folder selected above. Private runtime state
-is alongside it under `<workspace>/.runtime/`. Put ordinary data inside
-`<workspace>/default/`, not beside it. Sibling directories are not discovered or
-selected as environments.
+Your data and results live in `$workspace/default/` on the Docker host. Put data
+folders there, not beside `default/`. Conversations and provider connections are
+kept separately under `$workspace/.runtime/`.
 
 Workspace files become container-owned. Host edits can need administrator access.
 For Desktop, rootless, or remote Docker, prefer Docker-managed storage.
