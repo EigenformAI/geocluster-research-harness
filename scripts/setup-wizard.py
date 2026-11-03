@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive, task-approved setup for a native GeoCluster project."""
+"""Interactive, task-approved setup for a native GeoCluster workspace."""
 import copy
 import json
 import os
@@ -46,8 +46,8 @@ class Wizard:
         self.input = input_stream or sys.stdin
         self.output = output_stream or sys.stdout
         self.repo = support.REPO
-        self.plan = {'version': 1, 'image': None, 'docker': None, 'storage': None,
-                     'project': None, 'starter': {'kind': 'samples', 'destination': None},
+        self.plan = {'version': 2, 'image': None, 'docker': None, 'storage': None,
+                     'project': support.NATIVE_PROJECT, 'starter': {'kind': 'samples', 'destination': None},
                      'operation': None}
         self.saved = None
         self.docker = None
@@ -67,8 +67,6 @@ class Wizard:
         self.sample_verified = False
         self.prepared = False
         self.resume = False
-        self.reviewing = False
-        self.review_route = False
         self.stage = 1
 
     def say(self, text=''):
@@ -81,7 +79,7 @@ class Wizard:
         self.output.flush()
 
     def heading(self, number, title):
-        self.say(f'\nStep {number} of 7: {title}\n')
+        self.say(f'\nStep {number} of 6: {title}\n')
 
     def ask(self, prompt, *, default=None, help_text='', expected='a value', help_action=None):
         while True:
@@ -190,25 +188,25 @@ class Wizard:
         return 'Manual setup: ' + self.public_guide('README.md#' + section)
 
     def opening(self):
-        self.say("Set up GeoCluster\n\nLet's get your first project ready. We'll prepare GeoCluster, choose a home\nfor your files, and help you start with sample data or your own work.\n\nKeep the recommended choices to try GeoCluster with Wattle Creek sample data.\nYou'll connect your model provider when GeoCluster opens.\n\nPress Enter for the recommended choice, ? for more options, b to go back,\nor q to leave setup.\n")
+        self.say("Set up GeoCluster\n\nLet's get your workspace ready. We'll prepare GeoCluster, choose a home\nfor your files, and help you start with sample data or your own work.\n\nYour workspace contains data folders, saved results, conversations, and provider\nconnections. Keep the recommended choices to try Wattle Creek sample data.\nYou'll connect your model provider when GeoCluster opens.\n\nPress Enter for the recommended choice, ? for more options, b to go back,\nor q to leave setup.\n")
         self.saved = self.support.load_profile()
         pending = self.support.load_pending()
         if self.saved:
             self.plan = copy.deepcopy(self.saved)
             self.plan['starter'] = {'kind': 'existing', 'destination': None}
-            self.say(f"Welcome back. Your saved project is {self.plan['project']}, using {self.storage_description()}.\nPress Enter through the choices to keep this setup.")
+            self.say(f"Welcome back. Your saved workspace uses {self.storage_description()}.\nPress Enter through the choices to keep this setup.")
         if pending:
-            project = pending.get('project')
-            self.say(f"\nWelcome back. Let's finish setting up {project}." if project else "\nWelcome back. Let's finish preparing GeoCluster.")
+            self.say("\nWelcome back. Let's finish preparing your workspace.")
             try:
                 restore = self.confirm('Continue with your saved choices', help_text='Continue restores unfinished choices and checks workspace records before copying again. No keeps your last successful settings, or first-run defaults.')
             except Back:
                 restore = False
             if restore:
                 self.plan = {key: copy.deepcopy(pending.get(key)) for key in self.plan}
+                self.plan['project'] = self.support.NATIVE_PROJECT
                 self.allow_restricted = pending.get('allowRestricted', False)
                 self.resume = True
-                self.stage = max(2, min(6, pending.get('stage', 2)))
+                self.stage = max(2, min(5, pending.get('stage', 2)))
 
     def computer(self):
         self.heading(1, 'Check this computer')
@@ -410,7 +408,7 @@ class Wizard:
             if getattr(exc, 'code', '').replace('-', '_') in ('identity', 'docker_changed', 'platform'):
                 raise
             if selected:
-                self.say("Let's prepare the current GeoCluster image for this project.")
+                self.say("Let's prepare the current GeoCluster image for this workspace.")
             self.plan['image'] = None
             self.build_source = self.source_plan()
             mode = 'build'
@@ -463,7 +461,7 @@ class Wizard:
         return storage['name'] if storage['kind'] == 'volume' else storage['path']
 
     def storage_help(self):
-        self.say('A workspace keeps projects, conversations, and provider connections together.\nKeep the workspace name to return to the same workspace.\nChoose another name for a separate workspace.')
+        self.say('A workspace keeps data folders, results, conversations, and provider connections together.\nKeep the workspace name to return to the same work.\nChoose another name for an independent workspace. Only one GeoCluster session\ncan use a workspace at a time.')
         storage = self.plan.get('storage') or {}
         name = storage.get('name', VOLUME)
         while True:
@@ -480,13 +478,13 @@ class Wizard:
 
     def choose_storage(self):
         self.heading(3, 'Choose where files are kept')
-        self.say('Your workspace keeps projects, results, conversations, and provider connections together.\n')
+        self.say('Your workspace keeps data folders, results, conversations, and provider connections together.\n')
         storage = self.plan.get('storage') or {}
         default = 2 if storage.get('kind') == 'bind' else 1
         while True:
             try:
                 choice = self.menu(['Docker-managed storage (recommended)\n   Let GeoCluster manage storage. Use import and export commands to move files\n   between your computer and the workspace.',
-                                    'A folder on this computer\n   Browse project files directly. Setup and some file operations use\n   administrator access. Available with local Linux Docker.'], default, help_text='You can change the Docker-managed workspace name here.', help_action=self.storage_help)
+                                    'A folder on this computer\n   Browse your data files directly. Setup and some file operations use\n   administrator access. Available with local Linux Docker.'], default, help_text='You can change the Docker-managed workspace name here.', help_action=self.storage_help)
             except StorageEdited:
                 default = 1
                 continue
@@ -510,11 +508,11 @@ class Wizard:
                 continue
             base = self.support.allowed_host_base()
             suggested = storage.get('path', str(base / 'default'))
-            self.say(f"We'll create a dedicated workspace with room for your projects.\nThe suggested location is {suggested}.\n")
+            self.say(f"We'll create a dedicated workspace for your work.\nThe suggested location is {suggested}.\nYour data folders and results live under default/ inside it.\n")
             try:
                 while True:
                     value = self.ask(f'Workspace folder [{suggested}]:', default=suggested,
-                                     help_text=f'Each project gets a folder inside this workspace.\nGeoCluster also keeps conversations and provider connections here.\n\nAutomatic folder creation is available under {base}.\nTo use another location, choose an existing prepared workspace.\nContainer-owned files need administrator access for some host operations.')
+                                     help_text=f'Your ordinary files live under default/ inside this workspace.\nGeoCluster keeps conversations and provider connections separately.\nOther folders beside default/ are not opened automatically.\n\nAutomatic folder creation is available under {base}.\nTo use another location, choose an existing prepared workspace.\nContainer-owned files need administrator access for some host operations.')
                     path = Path(value).expanduser().absolute()
                     try:
                         plan = self.support.host_root_plan(path)
@@ -531,30 +529,6 @@ class Wizard:
         self.check()
         self.inspection = self.docker.inspect(self.plan['storage'], self.plan['project'], self.plan['image']['id'])
         return self.inspection
-
-    def choose_project(self):
-        self.heading(4, 'Name the project')
-        self.say('Give your project a name, or keep default for a first try.\n')
-        default = self.plan.get('project') or 'default'
-        while True:
-            name = self.ask(f'Project name [{default}]:', default=default,
-                            help_text='A workspace shares provider connections across its projects and runs one GeoCluster session at a time. Use another workspace for separate connections or simultaneous sessions.')
-            try:
-                self.support.validate_project(name)
-            except (self.support.SetupError, ValueError):
-                self.say('Choose a name with 1–64 letters, numbers, hyphens, or underscores.\nStart with a letter or number. Use another name instead of datasets.')
-                continue
-            if name != self.plan.get('project'):
-                self.plan['operation'] = None
-                self.copy_ready = self.resume_operation = False
-            self.plan['project'] = name
-            self.say(f'Project: {name}')
-            self.inspect()
-            if self.inspection.get('exists'):
-                self.say(f"Welcome back to {name}. We'll continue with the files already here.")
-            else:
-                self.say(f"We'll create {name} at /workspace/{name}.")
-            return
 
     def child_names(self):
         return {item if isinstance(item, str) else item.get('name', item.get('path', '')) for item in self.inspection.get('children', [])}
@@ -586,7 +560,7 @@ class Wizard:
             if self.menu(['Choose another folder name', 'Continue with existing files and add nothing'], help_text='Existing folders stay unchanged.') == 2:
                 return None
             while True:
-                proposed = self.ask('Folder name inside the project:', expected='a folder name', help_text='Choose a new, ordinary child folder name. Existing folders are never replaced.')
+                proposed = self.ask('Folder name inside the workspace:', expected='a folder name', help_text='Choose a new, ordinary child folder name. Existing folders are never replaced.')
                 try:
                     self.support.validate_destination(proposed)
                     break
@@ -594,8 +568,7 @@ class Wizard:
                     self.say(str(exc))
 
     def personal(self, destination=None):
-        project = self.plan['project']
-        self.say(f"Choose the folder to copy into {project}.\nYour original folder stays where it is.\n")
+        self.say("Choose the folder to copy into your workspace.\nYour original folder stays where it is.\n")
         while True:
             value = self.ask('Source folder on this computer:', expected='a source folder',
                              help_text='Copy complete related data folders. Shapefiles need .shx, .dbf, and .prj files; drillhole assays usually need collars and surveys. Links, special files, and protected runtime state cannot be copied.')
@@ -615,9 +588,9 @@ class Wizard:
                 self.say('These files are private to your account:')
                 for path in restricted:
                     self.say(f'  {path}')
-                self.say("\nWe'll give GeoCluster's tools access to the project copy.\n")
+                self.say("\nWe'll give GeoCluster's tools access to the workspace copy.\n")
                 try:
-                    include = self.confirm('Include these files', help_text='Only the project copy becomes accessible to GeoCluster service accounts. Original content and permissions stay unchanged.')
+                    include = self.confirm('Include these files', help_text='Only the workspace copy becomes accessible to GeoCluster service accounts. Original content and permissions stay unchanged.')
                 except Back:
                     continue
                 if not include:
@@ -631,7 +604,7 @@ class Wizard:
                 default = source.name
                 while True:
                     try:
-                        destination = self.ask(f'Folder name inside the project [{default}]:', default=default,
+                        destination = self.ask(f'Folder name inside the workspace [{default}]:', default=default,
                                                help_text='Use one new child folder name; imports never merge into existing content.')
                     except Back:
                         destination = None
@@ -670,13 +643,13 @@ class Wizard:
         self.source = None
         while True:
             existing = self.inspection.get('exists', False)
-            self.heading(5, 'Choose starting files' + (f" for {self.plan['project']}" if existing else ''))
+            self.heading(4, 'Choose starting files')
             if existing:
                 items = ['Continue with the files already here (default)', 'Add Wattle Creek samples', 'Copy another data folder']
             else:
                 items = ['Wattle Creek sample files (recommended for a first try)\n   Explore synthetic surface and drillhole data with a suggested first question.',
-                         'Copy your own data folder\n   Bring a copy of your data into the project.', 'Add files later']
-            choice = self.menu(items, help_text='Wattle Creek includes surface assays, drillhole collars, and drillhole assays. Personal imports copy a complete folder. Add files later never clears a project.')
+                         'Copy your own data folder\n   Bring a copy of your data into the workspace.', 'Add files later']
+            choice = self.menu(items, help_text='Wattle Creek includes surface assays, drillhole collars, and drillhole assays. Personal imports copy a complete folder. Add files later never clears your workspace.')
             kind = ({1: 'existing', 2: 'samples', 3: 'personal'} if existing else {1: 'samples', 2: 'personal', 3: 'none'})[choice]
             try:
                 if kind == 'personal':
@@ -691,10 +664,10 @@ class Wizard:
                         destination = self.destination('wattle-creek', reserved=recorded)
                     self.plan['starter'] = {'kind': 'samples', 'destination': destination} if destination else {'kind': 'existing', 'destination': None}
                     if destination:
-                        self.say(f"You'll find the samples in:\n  /workspace/{self.plan['project']}/{destination}")
+                        self.say(f"You'll find the sample data in the workspace folder:\n  {destination}/")
                 else:
                     self.plan['starter'] = {'kind': kind, 'destination': None}
-                    self.say("We'll prepare the project so you can add your data when you're ready." if kind == 'none' else 'Continuing with your existing files.')
+                    self.say("We'll prepare the workspace so you can add your data when you're ready." if kind == 'none' else 'Continuing with your existing files.')
                 return
             except Back:
                 continue
@@ -731,7 +704,7 @@ class Wizard:
         if isinstance(receipt, dict):
             receipt = receipt.get('receipt', receipt)
         if receipt and (receipt.get('project') != self.plan['project'] or receipt.get('destination') != starter.get('destination')):
-            raise self.error('The saved operation does not match the selected project and folder. Keep existing copies and choose starting files again.', 'invalid_receipt')
+            raise self.error('The saved operation does not match the workspace data folder. Keep existing copies and choose starting files again.', 'invalid_receipt')
         if receipt and self.unchanged(receipt):
             self.copy_ready = True
             self.sample_verified = starter['kind'] == 'samples'
@@ -760,13 +733,13 @@ class Wizard:
             else:
                 self.plan['starter']['destination'] = destination
 
-    def change_settings(self, back_to=6):
+    def change_settings(self, back_to=5):
         self.say('\nWhat would you like to change?\n')
         try:
-            choice = self.menu(['Where files are kept', 'Project name', 'Starting files', 'Finish later'], help_text='Changing choices does not undo completed work. A new preparation summary needs your approval before it is applied.')
+            choice = self.menu(['Where files are kept', 'Starting files', 'Finish later'], help_text='Changing choices does not undo completed work. A new preparation summary needs your approval before it is applied.')
         except Back:
             return back_to
-        if choice == 4:
+        if choice == 3:
             raise Cancel()
         return choice + 2
 
@@ -780,8 +753,8 @@ class Wizard:
             self.say('Only the approved dedicated workspace root is created as root. Existing ownership and permissions are never repaired.')
 
     def summary(self):
-        self.heading(6, 'Review and apply')
-        self.say("Let's set up your project with these choices:\n")
+        self.heading(5, 'Review and apply')
+        self.say("Let's set up your workspace with these choices:\n")
         storage = self.plan['storage']
         self.check()
         if storage['kind'] == 'volume':
@@ -792,19 +765,18 @@ class Wizard:
             description = ('Use ' if exists else 'Create ') + storage['path']
         starter = self.plan['starter']
         kind, destination = starter['kind'], starter['destination']
-        starting = {'samples': f"Wattle Creek samples in {self.plan['project']}/{destination}",
-                    'personal': f"Copy {self.source} to {self.plan['project']}/{destination}" if self.source else f'Continue with your data in {destination}',
+        starting = {'samples': f"Wattle Creek sample data in {destination}/",
+                    'personal': f"Copy {self.source} to {destination}/" if self.source else f'Continue with your data in {destination}',
                     'none': 'Add files later', 'existing': 'Continue with your existing files'}[kind]
-        project = ('Continue ' if self.inspection.get('exists') else '') + self.plan['project']
-        self.say(f"GeoCluster:     {self.plan['image']['reference']}\nWorkspace:      {description}\nProject:        {project}\nStarting files: {starting}\nNext time:      ./scripts/tui.sh\n")
+        self.say(f"GeoCluster:     {self.plan['image']['reference']}\nWorkspace:      {description}\nStarting files: {starting}\nNext time:      ./scripts/tui.sh\n")
         if kind == 'samples':
             self.say("We'll prepare the workspace, add the samples, and save your choices." if not self.copy_ready else "We'll save these choices and continue with your samples.")
         elif kind == 'personal':
-            self.say(f"We'll prepare {self.plan['project']} and copy your data into {destination}." if not self.copy_ready else f"We'll save these choices and open {self.plan['project']}.")
+            self.say(f"We'll prepare the workspace and copy your data into {destination}." if not self.copy_ready else "We'll save these choices and open your workspace.")
         elif kind == 'none':
-            self.say(f"We'll prepare {self.plan['project']} for you to add files later.")
+            self.say("We'll prepare the workspace for you to add files later.")
         else:
-            self.say(f"We'll save these choices and open {self.plan['project']}.")
+            self.say("We'll save these choices and open your workspace.")
         if storage['kind'] == 'bind':
             # Capture held parent identities and source bytes before approval.
             if self.host_plan is None:
@@ -812,9 +784,9 @@ class Wizard:
             if not self.host_plan.get('existing', exists):
                 self.say(f"\nWe'll use administrator access to create {storage['path']}.\nYour system may ask for your password during this step.")
         if self.saved:
-            self.say(f"Next time, ./scripts/tui.sh will open {self.plan['project']}.")
+            self.say("Next time, ./scripts/tui.sh will open this workspace.")
         self.say()
-        return self.confirm('Prepare this project', help_text='The image is already prepared. This approval prepares storage and files, then saves the selected launch settings.', help_action=self.review_help)
+        return self.confirm('Prepare this workspace', help_text='The image is already prepared. This approval prepares storage and files, then saves the selected launch settings.', help_action=self.review_help)
 
     def is_busy(self, exc):
         return getattr(exc, 'code', '').replace('-', '_') in ('busy', 'locked', 'workspace_in_use', 'workspace_busy')
@@ -831,14 +803,14 @@ class Wizard:
     def handle_changed_project(self, exc):
         code = getattr(exc, 'code', '').replace('-', '_')
         if code in ('project_exists', 'project_appeared'):
-            if self.confirm(f"{self.plan['project']} is already here. Continue with its files", help_text='The project appeared after review. Continuing adds no starting files.'):
+            if self.confirm('Workspace files are already here. Continue with them', help_text='The data directory appeared after review. Continuing adds no starting files.'):
                 self.inspection['exists'] = True
                 self.plan['starter'] = {'kind': 'existing', 'destination': None}
                 self.plan['operation'] = None
                 self.copy_ready = self.resume_operation = False
                 return True
         if code in ('project_missing', 'project_disappeared'):
-            if self.confirm(f"Create {self.plan['project']} again", help_text='The selected existing project disappeared after review. This creates a new project; it does not restore deleted files.'):
+            if self.confirm('Create an empty workspace data directory again', help_text='The existing data directory disappeared after review. This creates an empty directory; it does not restore deleted files.'):
                 self.inspection['exists'] = False
                 self.plan['starter'] = {'kind': 'existing', 'destination': None}
                 self.plan['operation'] = None
@@ -849,7 +821,7 @@ class Wizard:
     def apply(self):
         # Each new approval revalidates under the lock, including a save retry.
         self.prepared = False
-        self.start('preparing your project', 6)
+        self.start('preparing your workspace', 5)
         storage = self.plan['storage']
         self.check()
         self.say(f'Preparing workspace {self.storage_description()}...')
@@ -874,10 +846,10 @@ class Wizard:
                     self.copy_ready = self.resume_operation = self.prepared = False
                     self.inspect()
                     self.active = None
-                    return 6
+                    return 5
                 choice = self.menu(['Try creating the folder again', 'Choose where files are kept'], help_text=self.manual_guide('use-a-dedicated-host-folder'))
                 self.active = None
-                return 6 if choice == 1 else 3
+                return 5 if choice == 1 else 3
         while not self.prepared:
             try:
                 self.check()
@@ -897,11 +869,11 @@ class Wizard:
                     result = self.docker.operation(storage, self.plan['image']['id'], args)
                 if result.get('operation'):
                     self.plan['operation'] = result['operation']
-                    self.pending(6)
-                self.say('Checking the project...')
+                    self.pending(5)
+                self.say('Checking the workspace files...')
                 self.inspect()
                 if not self.inspection.get('exists'):
-                    raise self.error(f"We couldn't verify {self.plan['project']} after preparation.")
+                    raise self.error("We couldn't verify the workspace data directory after preparation.")
                 if not self.unchanged(result):
                     raise self.error('The workspace helper did not confirm verified preparation. Keep existing files and review setup again.', 'unverified_copy')
                 if kind in ('samples', 'personal'):
@@ -909,34 +881,34 @@ class Wizard:
                     self.sample_verified = kind == 'samples'
                     self.mark(f'{kind} ready in {destination}')
                 self.prepared = True
-                self.mark(f"project {self.plan['project']} prepared")
-                self.pending(6)
+                self.mark('workspace data directory prepared')
+                self.pending(5)
             except (self.support.SetupError, ValueError) as exc:
                 if self.is_busy(exc):
                     if self.busy(exc):
                         continue
                     self.active = None
-                    return 3 if self.menu(['Choose another workspace', 'Finish with this issue unresolved'], help_text='No project files are replaced.') == 1 else 0
+                    return 3 if self.menu(['Choose another workspace', 'Finish with this issue unresolved'], help_text='No workspace files are replaced.') == 1 else 0
                 if self.handle_changed_project(exc):
-                    self.pending(6)
+                    self.pending(5)
                     continue
                 if getattr(exc, 'code', '').replace('-', '_') in ('destination_exists', 'collision', 'unverified_copy'):
                     self.inspect()
                     if self.plan.get('operation'):
                         self.recover()
                         self.active = None
-                        return 6
+                        return 5
                     if not self.plan['starter'].get('destination'):
                         raise
                     destination = self.destination(self.plan['starter']['destination'], uncertain=True)
                     self.plan['starter'] = dict(self.plan['starter'], destination=destination) if destination else {'kind': 'existing', 'destination': None}
                     self.active = None
-                    return 6
-                self.say(f"We couldn't finish preparing your project: {exc}\nRun ./scripts/setup.sh to review the selected workspace and finish preparation.")
+                    return 5
+                self.say(f"We couldn't finish preparing your workspace: {exc}\nRun ./scripts/setup.sh to review the selected workspace and finish preparation.")
                 if getattr(exc, 'code', '').replace('-', '_') in ('identity', 'docker_changed', 'unsafe', 'unsafe_path', 'unsafe_workspace', 'unsafe_project', 'platform', 'source_changed', 'permission_required'):
                     raise
                 self.active = None
-                if self.retry('preparing your project'):
+                if self.retry('preparing your workspace'):
                     # Do not repeat an uncertain import blindly. Reconcile first.
                     self.recover()
                     if self.copy_ready:
@@ -951,24 +923,24 @@ class Wizard:
                 self.support.save_profile(self.plan, self.guide())
                 self.mark('launch settings saved')
                 self.active = None
-                return 7
+                return 6
             except (self.support.SetupError, OSError) as exc:
-                self.say(f'Your project files are ready. We still need to save the launch settings.\n{exc}')
+                self.say(f'Your workspace files are ready. We still need to save the launch settings.\n{exc}')
                 # Re-review before retrying a profile write; never duplicate data.
                 if self.retry('saving the launch settings'):
                     self.active = None
-                    return 6
+                    return 5
                 return 0
 
     def explicit_command(self):
         args = ['./scripts/run-runtime-tui.sh', '--image', self.plan['image']['id']]
         storage = self.plan['storage']
         args += ['--workspace-volume', storage['name']] if storage['kind'] == 'volume' else ['--workspace-root', storage['path']]
-        args += ['--project', self.plan['project'], '--require-existing-project']
+        args += ['--require-existing-workspace']
         return shlex.join(args)
 
     def first_use(self):
-        text = 'Once GeoCluster opens:\n\n1. Run /connect to connect your model provider.\n2. Run /models to choose a model.\n\nYour chosen provider handles model requests and any project content included\nwith them. Model usage follows that provider\'s pricing.\n'
+        text = 'Once GeoCluster opens:\n\n1. Run /connect to connect your model provider.\n2. Run /models to choose a model.\n\nYour chosen provider handles model requests and any workspace content included\nwith them. Model usage follows that provider\'s pricing.\n'
         kind = self.plan['starter']['kind']
         destination = self.plan['starter']['destination']
         if kind == 'samples' and self.sample_verified:
@@ -976,9 +948,9 @@ class Wizard:
         elif kind == 'personal':
             text += f'\nTry this first question with your data:\n\n  List the files in {destination}/. Explain what data is present and\n  what related files may be missing. Do not change the input files.\n'
         elif kind == 'none':
-            text += "\nWhen you're ready to add data, run /exit inside GeoCluster.\nThen run this in your usual terminal:\n  ./scripts/project-files.sh import\n\nWe'll help you choose a folder to bring into the project.\n"
+            text += "\nWhen you're ready to add data, run /exit inside GeoCluster.\nThen run this in your usual terminal:\n  ./scripts/workspace-files.sh import\n\nWe'll help you choose a folder to bring into the workspace.\n"
         else:
-            text += f"\nPick up where you left off, or ask GeoCluster about a folder in {self.plan['project']}.\n"
+            text += "\nPick up where you left off, or ask GeoCluster about a folder in your workspace.\n"
         return text
 
     def outcome(self):
@@ -987,18 +959,18 @@ class Wizard:
                 'none': 'Ready for you to add files.', 'existing': 'Continuing with your existing files.'}[self.plan['starter']['kind']]
 
     def guide(self):
-        text = f"GeoCluster project: {self.plan['project']}\nWorkspace: {self.storage_description()}\n{self.outcome()}\n\n{self.first_use()}"
+        text = f"GeoCluster workspace: {self.storage_description()}\n{self.outcome()}\n\n{self.first_use()}"
         if self.sample_verified:
             text += '\nFor the sample check, look for WC141: it has assay intervals but no collar.\n'
-        text += f'\nReturn to this project\n\nFrom {self.repo}:\n  ./scripts/tui.sh\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n\nChange saved choices:\n  ./scripts/setup.sh\n\nFinish pending work, then run /exit to close GeoCluster.\nKeep this workspace to continue with your files, conversations, and connections.\n\nResults: runs/<session-id>/results/ in the project.\nAnswers list created files. Review them before sharing.\n\nBefore either transfer, run /exit inside GeoCluster.\n\nExport: stop other project editors, then run in your normal terminal:\n  ./scripts/project-files.sh export\nChoose a project folder and output location when prompted.\n\nImport, from your normal terminal:\n  ./scripts/project-files.sh import\nChoose source and destination folders when prompted. Originals stay unchanged.\n\nDocument extraction\n\nGeoCluster can read text already present in PDF files.\nTo extract text from scanned pages, follow the document-processing guide:\n  {self.public_guide("docs/NATIVE_DOCUMENT_PROCESSING.md")}\n\nProvider login\n\nNo callback ports are published. Use a supported API-key or device-code\nconnection method; browser logins that require a callback may need custom setup.\n'
+        text += f'\nReturn to this workspace\n\nFrom {self.repo}:\n  ./scripts/tui.sh\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n\nChange saved choices:\n  ./scripts/setup.sh\n\nFinish pending work, then run /exit to close GeoCluster.\nKeep this workspace to continue with your files, conversations, and connections.\n\nResults: runs/<session-id>/results/ in the workspace.\nAnswers list created files. Review them before sharing.\n\nBefore either transfer, run /exit inside GeoCluster.\n\nExport: stop other workspace editors, then run in your normal terminal:\n  ./scripts/workspace-files.sh export\nChoose a workspace folder and output location when prompted.\n\nImport, from your normal terminal:\n  ./scripts/workspace-files.sh import\nChoose source and destination folders when prompted. Originals stay unchanged.\n\nDocument extraction\n\nGeoCluster can read text already present in PDF files.\nTo extract text from scanned pages, follow the document-processing guide:\n  {self.public_guide("docs/NATIVE_DOCUMENT_PROCESSING.md")}\n\nProvider login\n\nNo callback ports are published. Use a supported API-key or device-code\nconnection method; browser logins that require a callback may need custom setup.\n'
         return text
 
     def finish(self):
-        self.heading(7, 'Your project is ready')
-        self.say(f"Project: {self.plan['project']}\nWorkspace: {self.storage_description()}\n{self.outcome()}\n\n{self.first_use()}")
-        self.say(f"To open this project again, run:\n  ./scripts/tui.sh\n\nYour first-use guide, including file-transfer commands, is saved at:\n  {self.repo / '.geocluster/next-steps.txt'}\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n")
+        self.heading(6, 'Your workspace is ready')
+        self.say(f"Workspace: {self.storage_description()}\n{self.outcome()}\n\n{self.first_use()}")
+        self.say(f"To open this workspace again, run:\n  ./scripts/tui.sh\n\nYour first-use guide, including file-transfer commands, is saved at:\n  {self.repo / '.geocluster/next-steps.txt'}\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n")
         if not self.confirm('Start GeoCluster now', help_text='Provider login happens inside GeoCluster; setup never collects keys. No callback ports are published. Supported API-key or device-code methods work without publishing ports. Type b to change saved choices.'):
-            self.say('Your project is ready. Open it whenever you like with ./scripts/tui.sh.')
+            self.say('Your workspace is ready. Open it whenever you like with ./scripts/tui.sh.')
             return 0
         try:
             self.check()
@@ -1007,7 +979,7 @@ class Wizard:
                 raise self.error(f'The terminal interface exited with status {result}.')
             return 0
         except (self.support.SetupError, OSError, subprocess.CalledProcessError) as exc:
-            self.say(f"Your project is ready. Let's resolve the launch issue:\n{exc}\nResolve the cause above, then open it with:\n  ./scripts/tui.sh")
+            self.say(f"Your workspace is ready. Let's resolve the launch issue:\n{exc}\nResolve the cause above, then open it with:\n  ./scripts/tui.sh")
             return 1
 
     def run(self):
@@ -1019,15 +991,13 @@ class Wizard:
             step = max(3, resumed_stage) if self.resume else 3
             if not self.plan.get('storage'):
                 step = 3
-            elif not self.plan.get('project'):
-                step = min(step, 4)
-            if self.resume and step >= 5:
+            if self.resume and step >= 4:
                 try:
                     self.recover()
-                    if step == 5 and (self.copy_ready or self.resume_operation):
-                        step = 6
+                    if step == 4 and (self.copy_ready or self.resume_operation):
+                        step = 5
                 except Back:
-                    step = 5
+                    step = 4
             while True:
                 try:
                     if step == 2:
@@ -1040,27 +1010,17 @@ class Wizard:
                         if before != self.plan['storage']:
                             self.plan['operation'] = None
                             self.copy_ready = self.resume_operation = self.prepared = False
-                        self.review_route = self.reviewing
                         step = 4
                     elif step == 4:
-                        before = self.plan['project']
-                        self.choose_project()
-                        if before != self.plan['project']:
-                            self.prepared = False
-                        # A new storage/project selection needs an appropriate
-                        # existing/new starter choice, not a stale import plan.
-                        step = 6 if self.reviewing and not self.review_route and before == self.plan['project'] else 5
-                        self.review_route = False
-                    elif step == 5:
                         self.inspect()
                         self.choose_starter()
                         self.prepared = False
-                        step = 6
-                    elif step == 6:
+                        step = 5
+                    elif step == 5:
                         try:
                             approved = self.summary()
                         except Back:
-                            step = 5
+                            step = 4
                             continue
                         if approved:
                             step = self.apply()
@@ -1068,13 +1028,11 @@ class Wizard:
                                 self.say('Completed: ' + (', '.join(self.completed) or 'no completed tasks confirmed') + '.')
                                 return 1
                         else:
-                            self.reviewing = True
                             step = self.change_settings()
                     else:
                         return self.finish()
                 except Back:
-                    if step in (6, 7):
-                        self.reviewing = True
+                    if step in (5, 6):
                         step = self.change_settings(back_to=step)
                     else:
                         step = max(2, step - 1)
@@ -1094,7 +1052,7 @@ class Wizard:
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv == ['--help']:
-        print('Usage: ./scripts/setup.sh\n\nSet up a native GeoCluster project in seven guided steps.\nPress Enter for defaults, ? for help, b to go back, or q to quit.\nAn interactive terminal is required. Setup never collects provider credentials.\n\nFor unattended use, run scripts/build-docker.sh and scripts/run-runtime-tui.sh.\nTo return to your saved project, run ./scripts/tui.sh.')
+        print('Usage: ./scripts/setup.sh\n\nSet up a native GeoCluster workspace in six guided steps.\nPress Enter for defaults, ? for help, b to go back, or q to quit.\nAn interactive terminal is required. Setup never collects provider credentials.\n\nFor unattended use, run scripts/build-docker.sh and scripts/run-runtime-tui.sh.\nTo return to your saved workspace, run ./scripts/tui.sh.')
         return 0
     if argv:
         print('Usage: ./scripts/setup.sh [--help]', file=sys.stderr)

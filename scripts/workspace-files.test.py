@@ -4,20 +4,39 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
-spec = importlib.util.spec_from_file_location('project_files', Path(__file__).with_name('project-files.py'))
+spec = importlib.util.spec_from_file_location('workspace_files', Path(__file__).with_name('workspace-files.py'))
 files = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(files)
 
 
 class TransferTests(unittest.TestCase):
     def test_explicit_options_never_merge_saved_storage(self):
-        args = files.parser().parse_args(['import', '/source', '--project', 'another'])
+        args = files.parser().parse_args(['import', '/source', '--image', 'custom:latest'])
         with patch.object(files, 'load_profile', side_effect=AssertionError('must not load saved settings')):
             with self.assertRaisesRegex(files.SetupError, 'cannot be mixed'):
                 files.select(None, args)
+
+    def test_explicit_storage_targets_the_native_workspace(self):
+        for option, value, storage in (
+            ('--workspace-volume', 'native-data', {'kind': 'volume', 'name': 'native-data'}),
+            ('--workspace-root', '/native-data', {'kind': 'bind', 'path': '/native-data'}),
+        ):
+            with self.subTest(option=option):
+                args = files.parser().parse_args(['import', '/source', option, value])
+                docker = Mock()
+                docker.image.return_value = {'id': 'sha256:' + 'a' * 64}
+                with patch.object(files, 'load_profile', side_effect=AssertionError('must not load saved settings')):
+                    self.assertEqual(files.select(docker, args), (storage, 'default', docker.image.return_value['id']))
+                docker.image.assert_called_once_with('geocluster-runtime:latest')
+
+    def test_project_selection_is_rejected_before_docker(self):
+        with patch.object(files, 'Docker', side_effect=AssertionError('must not touch Docker')):
+            with self.assertRaises(SystemExit) as error:
+                files.main(['import', '/source', '--workspace-volume', 'native-data', '--project', 'another'])
+        self.assertEqual(error.exception.code, 2)
 
     def test_unattended_missing_source_is_reported_before_docker(self):
         with patch.object(files.sys.stdin, 'isatty', return_value=False):

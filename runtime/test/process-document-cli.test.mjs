@@ -72,4 +72,38 @@ test("host wrapper only inspects and execs a matching live native container; nev
 	assert.deepEqual(commands.map(([command]) => command), ["ps", "inspect", "exec"])
 	assert.deepEqual(commands[2].slice(-3), ["status", "--request", "retained"])
 	assert.ok(commands[2].includes("/opt/geocluster-runtime/process-document.mjs"))
+	assert.ok(commands[2].includes("PROJECT_ID=default"))
+})
+
+test("host wrapper rejects removed project selectors before contacting Docker", async (t) => {
+	const directory = await fs.mkdtemp("/tmp/opencode/document-selector-"), calls = path.join(directory, "calls")
+	t.after(() => fs.rm(directory, { recursive: true, force: true }))
+	await fs.writeFile(path.join(directory, "docker"), '#!/bin/sh\nprintf called > "$MOCK_CALLS"\n', { mode: 0o755 })
+	for (const args of [["--project", "named", "status"], ["--project=default", "status"], ["status", "--project", "named"]]) {
+		const result = spawnSync("bash", [fileURLToPath(new URL("../../scripts/process-document.sh", import.meta.url)), ...args], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MOCK_CALLS: calls } })
+		assert.equal(result.status, 2, result.stderr)
+		assert.match(result.stderr, /--project.*(removed|supported)|removed.*--project/i)
+		await assert.rejects(fs.stat(calls), { code: "ENOENT" })
+	}
+})
+
+test("explicit container selection cannot bypass fixed workspace or attachment validation", async (t) => {
+	const directory = await fs.mkdtemp("/tmp/opencode/document-attachment-"), calls = path.join(directory, "calls")
+	t.after(() => fs.rm(directory, { recursive: true, force: true }))
+	await fs.writeFile(path.join(directory, "docker"), `#!${process.execPath}\nconst fs = require('node:fs'); const args = process.argv.slice(2); fs.appendFileSync(process.env.MOCK_CALLS, JSON.stringify(args)+'\\n'); if(args[0]==='inspect') console.log(process.env.MOCK_ENTRIES); else process.exit(9);\n`, { mode: 0o755 })
+	const valid = { Id: "selected", State: { Running: true }, Config: { Env: ["RUNTIME_PROFILE=native", "PROJECT_ID=default", "RUNTIME_NATIVE_PROCESSING_MODEL=provider/model"] }, Mounts: [{ Destination: "/workspace", Type: "volume", Name: "geocluster-native-workspace" }] }
+	for (const entries of [
+		[{ ...valid, Config: { Env: valid.Config.Env.map((item) => item === "PROJECT_ID=default" ? "PROJECT_ID=named" : item) } }],
+		[{ ...valid, State: { Running: false } }],
+		[{ ...valid, Config: { Env: valid.Config.Env.map((item) => item === "RUNTIME_PROFILE=native" ? "RUNTIME_PROFILE=managed" : item) } }],
+		[{ ...valid, Config: { Env: valid.Config.Env.filter((item) => !item.startsWith("RUNTIME_NATIVE_PROCESSING_MODEL=")) } }],
+		[{ ...valid, Mounts: [{ ...valid.Mounts[0], Name: "different-workspace" }] }],
+		[valid, { ...valid, Id: "another" }],
+	]) {
+		await fs.writeFile(calls, "")
+		const result = spawnSync("bash", [fileURLToPath(new URL("../../scripts/process-document.sh", import.meta.url)), "--container", "selected", "status"], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MOCK_CALLS: calls, MOCK_ENTRIES: JSON.stringify(entries) } })
+		assert.equal(result.status, 1, result.stderr)
+		assert.match(result.stderr, /exactly one running processing-enabled native runtime/)
+		assert.deepEqual((await fs.readFile(calls, "utf8")).trim().split("\n").map(JSON.parse), [["inspect", "selected"]])
+	}
 })

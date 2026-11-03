@@ -7,7 +7,7 @@ data, spatial surveys, and technical reports.
 The harness uses [OpenCode](https://opencode.ai) and
 [geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp). You interact through
 the OpenCode terminal user interface (TUI) with your own model provider. Input
-files and saved results stay in a project workspace you control. Model requests
+files and saved results stay in a workspace you control. Model requests
 can include your data. See [Data privacy](#data-privacy).
 
 ## What you can do
@@ -39,7 +39,7 @@ You need:
 OpenCode runs inside the Docker image. Connect your provider when GeoCluster
 opens. Model usage follows that provider's pricing.
 
-## Set up a project
+## Set up a workspace
 
 1. Clone the repository and its geology tools:
 
@@ -60,17 +60,19 @@ opens. Model usage follows that provider's pricing.
 	```
 
 For a first try, press Enter through the recommended choices. The guide prepares
-GeoCluster and sets up project `default` in Docker-managed storage with Wattle
-Creek samples.
+GeoCluster and keeps your workspace in Docker-managed storage. Wattle Creek
+samples are optional starting data, not a separate environment.
 
-You can also copy your own data folder or add files later. Use `?` to explore
-image and storage options. Returning to an existing project continues with its files.
+The guide has six steps: checks, image, storage, starting files, approval and
+application, and launch. Copy your own data folder, add the optional samples, or
+start without data and add files later. Use `?` to explore image and storage
+options. Returning to an existing workspace continues with its files.
 
-When your project is ready, open GeoCluster from the guide. Follow
+When your workspace is ready, open GeoCluster from the guide. Follow
 [Ask about the folder](#ask-about-the-folder) to connect your provider and try a
 first question.
 
-To open the saved project again, run this command without options:
+To open the saved workspace again, run this command without options:
 
 ```sh
 ./scripts/tui.sh
@@ -82,28 +84,39 @@ first-use instructions in `.geocluster/next-steps.txt`.
 To change the saved choices, run `./scripts/setup.sh` again. For custom launch
 options, use the [explicit launcher](#use-the-explicit-launcher).
 
+Settings from the older project-selection setup are not reused. If setup reports
+incompatible settings, move the checkout's `.geocluster` directory aside and run
+setup again. Keep those settings and the workspace files. Setup does not migrate,
+merge, or discover other data directories.
+
 ## Add a data folder
 
 1. Run `/exit` inside GeoCluster before a file transfer.
 2. In your usual terminal, start the import command.
 
 	```sh
-	./scripts/project-files.sh import
+	./scripts/workspace-files.sh import
 	```
 
-3. Choose the source folder and a new folder name inside the project when prompted.
+3. Choose the source folder and a new folder name inside the workspace when prompted.
 
-The command __copies__ your data into a new folder in the saved project (original files are untouched). For private source files, it asks you to give
-GeoCluster's tools access to the project copy.
+The command __copies__ your data into a new folder in the saved workspace.
+Original files stay unchanged. For private source files, it asks you to give
+GeoCluster's tools access to the workspace copy.
 
 Copy complete data folders to preserve linked files. For example, a shapefile
 needs its `.shx`, `.dbf`, and `.prj` files, and drillhole assays need collars and
 surveys for spatial analysis. Name a folder in your question to have the agent
 inspect its files.
 
-Project files live at `/workspace/<PROJECT_ID>/` inside GeoCluster. The workspace
-also keeps conversations and provider connections separately from project files.
+Data folders and saved results live at `/workspace/default/` inside GeoCluster.
+Private runtime state, including conversations and provider connections, lives
+alongside that content directory under `/workspace/.runtime/`.
 With remote Docker, imports transfer your data to that Docker host.
+
+The default Docker volume does not expose arbitrary folders on your computer.
+Import a local data folder to use it there. Creating a local folder does not make
+GeoCluster discover or open it automatically.
 
 For direct access to files on your computer,
 [use a dedicated host folder](#use-a-dedicated-host-folder). See
@@ -126,7 +139,7 @@ For direct access to files on your computer,
    Look for `WC141` in the results: it has assay intervals but no matching collar.
 
 4. Find the saved files in the paths that the answer lists. Each conversation
-   saves its outputs under `runs/<session-id>/results/` in the project folder.
+   saves its outputs under `runs/<session-id>/results/` in the workspace.
    If the TUI asks for permission to write a file, approve or deny the request
    there. Use [Share results](#share-results) to copy outputs to your computer.
 
@@ -186,25 +199,27 @@ Before sharing the pack, check the file list, content, and layout. Look for sour
 footnotes, axis units, colour-blind-safe palettes, image alt text, and speaker
 notes for findings.
 
-To copy results from the saved project to your computer:
+To copy results from the saved workspace to your computer:
 
 1. Finish pending work and run `/exit` inside GeoCluster.
-2. Stop other programs that edit the project files, including host editors.
+2. Stop other programs that edit the workspace files, including host editors.
 3. In your usual terminal, start the export command.
 
 	```sh
-	./scripts/project-files.sh export
+	./scripts/workspace-files.sh export
 	```
 
 4. Choose the results folder from the displayed paths. Choose a new destination
    folder on your computer when prompted.
 
 Exports create a new destination without replacing existing files. They copy
-ordinary project content, not provider connections or private runtime state.
+ordinary workspace content, not provider connections or private runtime state.
 Transfers reject links and mounted subtrees. They are not permission-preserving
 backups.
 Imports and exports require exclusive access to the workspace. Run
-`./scripts/project-files.sh --help` for explicit storage and project options.
+`./scripts/workspace-files.sh --help` for explicit storage options. Explicit
+transfers require `--workspace-volume NAME` or `--workspace-root DIRECTORY`.
+An optional `--image IMAGE` uses that explicit storage, never saved choices.
 
 ## Configure the runtime
 
@@ -214,13 +229,13 @@ Some provider login methods show a URL or device code. Native startup publishes
 no host ports, so login methods that need a container loopback callback may
 require extra configuration.
 
-Use `./scripts/tui.sh` without options to open the saved project. It does not
+Use `./scripts/tui.sh` without options to open the saved workspace. It does not
 accept workspace, provider, or processing overrides. Use the explicit launch
 command printed by setup for those options.
 
 GeoCluster can read text already present in PDF files. To enable extraction from
 scanned pages, add `--processing-model 'provider/model[#variant]'` to your explicit
-launch command. Keep the same image, workspace, and project choices. Replace the
+launch command. Keep the same image and workspace choices. Replace the
 model reference with an available model. Processing reuses your native OpenCode
 connections but selects its model separately from the conversation. Ordinary
 startup leaves processing disabled. See
@@ -231,12 +246,14 @@ job tracking, and recovery.
 
 ```sh
 ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
-	--workspace-volume geocluster-native-workspace --project default
+	--workspace-volume geocluster-native-workspace
 ```
 
 Run `./scripts/run-runtime-tui.sh --help` for custom workspace, provider-environment,
 and processing-model options. This launcher does not read saved setup choices.
-Reuse the same workspace and project options on every explicit launch.
+Reuse the same workspace options on every explicit launch. Add
+`--require-existing-workspace` to refuse creation when its data folder is missing.
+Native commands use one workspace with data folders, without a project name or selector.
 
 #### Use a dedicated host folder
 
@@ -250,10 +267,16 @@ workspace="$HOME/.local/share/geocluster/workspaces/manual"
 mkdir -p "$(dirname "$workspace")"
 sudo install -d -o root -g root -m 0755 "$workspace"
 ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
-	--workspace-root "$workspace" --project default
+	--workspace-root "$workspace"
 ```
 
-Project files become container-owned. Host edits can need administrator access.
+Data folders and saved results are at `<workspace>/default/` on the Docker host,
+where `<workspace>` is the dedicated folder selected above. Private runtime state
+is alongside it under `<workspace>/.runtime/`. Put ordinary data inside
+`<workspace>/default/`, not beside it. Sibling directories are not discovered or
+selected as environments.
+
+Workspace files become container-owned. Host edits can need administrator access.
 For Desktop, rootless, or remote Docker, prefer Docker-managed storage.
 A bind path refers to the Docker host.
 
@@ -289,24 +312,24 @@ Use `geocluster-runtime:local` for that development image.
 ## Protect your workspace
 
 Keep the workspace to preserve files, conversation history, and provider
-connections. Native engine state is outside the project directory with mode
+connections. Native engine state is outside the content directory with mode
 `0700`. Whole-workspace backups can contain provider credentials and refresh
 tokens. Protect those backups like credentials.
 
 The launcher mounts the workspace rather than your home directory or unrelated
-host folders. Agent code is not confined to the active project folder.
+host folders. Agent code is not confined to the data folders.
 
-Open only projects whose configuration and plugins you trust. Both can execute
+Import only data folders whose configuration and plugins you trust. Both can execute
 code as the engine's Unix user. Shell tools running as that user can access its
 credentials. Agent tool permissions guide delegation. They do not sandbox code
 executed by an agent. Native mode is not a credential sandbox. See the
 [security limits](docs/DESIGN_INVARIANTS.md#security-limits).
 
 Run only one runtime per workspace. The runtime rejects concurrent use and reuse
-by a different deployment profile. To change profiles, copy only ordinary project
-data and saved results from `/workspace/<PROJECT_ID>/` into a new volume's project
+by a different deployment profile. To change profiles, copy only ordinary data
+and saved results from `/workspace/default/` into the new deployment's content
 directory. Never copy the enclosing `/workspace` root, `.runtime`, or `.ide-state`.
-Sessions and credentials do not transfer with project files.
+Sessions and credentials do not transfer with ordinary workspace files.
 
 ### Data privacy
 
@@ -318,13 +341,13 @@ requirements.
 
 ## Continue or stop
 
-To continue with the saved project, run:
+To continue with the saved workspace, run:
 
 ```sh
 ./scripts/tui.sh
 ```
 
-To choose another image, project, or Docker connection, run `./scripts/setup.sh`
+To choose another image, workspace location, or Docker connection, run `./scripts/setup.sh`
 again.
 
 To stop, run `/exit` in the TUI. Exiting shuts down its local runtime and owned
@@ -342,8 +365,8 @@ services. Finish pending work before you exit or rebuild.
 
 4. Run `./scripts/setup.sh`. Choose **Build the current GeoCluster image** in the
    image choices. Setup fetches the pinned processor source and offers to keep
-   your existing workspace and project.
-5. Open the saved project with `./scripts/tui.sh`.
+   your existing workspace.
+5. Open the saved workspace with `./scripts/tui.sh`.
 
 For manual builds, follow [Build the image manually](#build-the-image-manually).
 Keep modified processor checkouts instead of replacing them. After a rebuild,

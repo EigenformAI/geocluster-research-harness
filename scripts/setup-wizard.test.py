@@ -65,6 +65,7 @@ class FakeDocker:
 
 class Support:
     SetupError = SetupError
+    NATIVE_PROJECT = 'default'
     REPO = Path(__file__).resolve().parent.parent
 
     def __init__(self):
@@ -128,7 +129,7 @@ class WizardTests(unittest.TestCase):
         return result, support, output.getvalue(), guide
 
     def test_enter_only_prepares_samples_and_launches(self):
-        code, support, output, _ = self.run_guide('\n' * 12)
+        code, support, output, _ = self.run_guide('\n' * 5)
         self.assertEqual(code, 0)
         self.assertTrue(support.launched)
         profile, text = support.saved
@@ -137,6 +138,63 @@ class WizardTests(unittest.TestCase):
         self.assertIn('/connect', output)
         self.assertLess(support.events.index('image'), support.events.index('volume'))
 
+    def test_workspace_setup_needs_only_storage_and_starting_files(self):
+        # Image approval, storage, no starting files, preparation approval, no launch.
+        code, support, output, _ = self.run_guide('\n\n3\n\nn\n')
+        self.assertEqual(code, 0, output)
+        self.assertFalse(support.launched)
+        self.assertEqual(support.saved[0]['project'], 'default')
+        self.assertEqual(support.saved[0]['starter']['kind'], 'none')
+        self.assertIn('workspace-files.sh import', output)
+        self.assertNotIn('WC141', support.saved[1])
+        actions = [event[1] for event in support.events if isinstance(event, tuple) and event[0] == 'operation']
+        self.assertTrue(actions)
+        for action in actions:
+            self.assertEqual(action[action.index('--project') + 1], 'default')
+        self.assertIn('Step 6 of 6: Your workspace is ready', output)
+
+    def test_starting_files_back_returns_to_storage(self):
+        code, support, output, _ = self.run_guide('\n\nb\n\n3\n\nn\n')
+        self.assertEqual(code, 0, output)
+        self.assertEqual(output.count('Step 3 of 6: Choose where files are kept'), 2)
+        self.assertEqual(support.saved[0]['starter']['kind'], 'none')
+
+    def test_switching_workspace_discards_previous_copy_and_reinspects(self):
+        support = Support()
+        inspections, actions, prepared = [], [], set()
+        original_docker = support.Docker
+
+        def docker():
+            client = original_docker()
+            original_inspect, original_operation = client.inspect, client.operation
+
+            def inspect(storage, project, image):
+                inspections.append(storage['name'])
+                if storage['name'] == 'other-workspace':
+                    return {'exists': storage['name'] in prepared, 'children': [], 'samples': [], 'operations': []}
+                return original_inspect(storage, project, image)
+
+            def operation(storage, image, args, **kwargs):
+                actions.append((storage['name'], args))
+                prepared.add(storage['name'])
+                return original_operation(storage, image, args, **kwargs)
+
+            client.inspect, client.operation = inspect, operation
+            return client
+
+        support.Docker = docker
+        # Finish one copy, return to storage, select another workspace, add nothing.
+        code, support, output, _ = self.run_guide('\n\n\n\nb\n1\n?\nother-workspace\n\n3\n\nn\n', support)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(support.saved[0]['storage']['name'], 'other-workspace')
+        self.assertEqual(support.saved[0]['starter']['kind'], 'none')
+        self.assertIn('other-workspace', inspections)
+        second = [args for name, args in actions if name == 'other-workspace']
+        self.assertEqual(len(second), 1)
+        self.assertNotIn('--resume', second[0])
+        self.assertNotIn('--samples', second[0])
+        self.assertEqual(second[0][second[0].index('--expect') + 1], 'absent')
+
     def test_eof_never_approves_installed_image(self):
         code, support, output, _ = self.run_guide('')
         self.assertEqual(code, 130)
@@ -144,19 +202,11 @@ class WizardTests(unittest.TestCase):
         self.assertNotIn('pending', support.events)
         self.assertIn('No changes were made', output)
 
-    def test_no_data_and_declining_launch_succeed(self):
-        code, support, output, _ = self.run_guide('\n\n\n3\n\nn\n')
-        self.assertEqual(code, 0)
-        self.assertFalse(support.launched)
-        self.assertEqual(support.saved[0]['starter']['kind'], 'none')
-        self.assertIn('project-files.sh import', output)
-        self.assertNotIn('WC141', support.saved[1])
-
-    def test_existing_project_defaults_to_adding_nothing(self):
+    def test_existing_workspace_defaults_to_adding_nothing(self):
         support = Support()
         support.exists, support.volume = True, True
         support.children = ['wattle-creek']
-        code, support, _, _ = self.run_guide('\n' * 7 + 'n\n', support)
+        code, support, _, _ = self.run_guide('\n' * 4 + 'n\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['kind'], 'existing')
 
@@ -164,13 +214,13 @@ class WizardTests(unittest.TestCase):
         support = Support()
         support.exists, support.volume = True, True
         support.children = ['wattle-creek', 'wattle-creek-2']
-        code, support, output, _ = self.run_guide('\n\n\n2\n\n\nn\n', support)
+        code, support, output, _ = self.run_guide('\n\n2\n\n\nn\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['destination'], 'wattle-creek-3')
         self.assertIn('wattle-creek-3/drilling/assays.csv', output)
 
     def test_personal_permission_is_yes_default_and_source_not_pending(self):
-        code, support, _, _ = self.run_guide('\n\n\n2\n/private/data\n\n\n\nn\n')
+        code, support, _, _ = self.run_guide('\n\n2\n/private/data\n\n\n\nn\n')
         self.assertEqual(code, 0)
         self.assertIn(('import', True), support.events)
         self.assertNotIn('/private/data', str(support.pending))
@@ -193,8 +243,8 @@ class WizardTests(unittest.TestCase):
     def test_pending_verified_copy_skips_source_and_duplicate_copy(self):
         support = Support()
         support.volume, support.exists = True, True
-        support.pending = {'version': 1, 'image': {'reference': 'selected:local', 'id': 'sha256:installed', 'created': 'today'}, 'docker': {'fingerprint': 'chosen-daemon', 'label': 'local Docker'}, 'storage': {'kind': 'volume', 'name': 'chosen'}, 'project': 'mine', 'starter': {'kind': 'personal', 'destination': 'my-data'}, 'operation': '11111111-1111-4111-8111-111111111111', 'stage': 6, 'allowRestricted': True}
-        support.receipt = {'state': 'verified', 'unchanged': True, 'operation': support.pending['operation'], 'project': 'mine', 'destination': 'my-data'}
+        support.pending = self.pending_personal()
+        support.receipt = {'state': 'verified', 'unchanged': True, 'operation': support.pending['operation'], 'project': 'default', 'destination': 'my-data'}
         code, support, output, _ = self.run_guide('\n\nn\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['storage']['name'], 'chosen')
@@ -215,15 +265,15 @@ class WizardTests(unittest.TestCase):
         self.assertIn('Enter y or n', output.getvalue())
 
     def test_completed_launch_back_changes_starter_and_requires_new_approval(self):
-        code, support, output, _ = self.run_guide('\n\n\n\n\nb\n3\n1\n\nn\n')
+        code, support, output, _ = self.run_guide('\n\n\n\nb\n2\n1\n\nn\n')
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['kind'], 'existing')
-        self.assertEqual(output.count('Prepare this project? [Y/n]:'), 2)
+        self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 2)
 
     def test_change_menu_back_returns_to_review(self):
-        code, support, output, _ = self.run_guide('\n\n\n3\nn\nb\n\nn\n')
+        code, support, output, _ = self.run_guide('\n\n3\nn\nb\n\nn\n')
         self.assertEqual(code, 0)
-        self.assertEqual(output.count('Prepare this project? [Y/n]:'), 2)
+        self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 2)
 
     def test_image_help_offers_alternatives_without_approval(self):
         code, support, output, _ = self.run_guide('?\nq\n')
@@ -238,7 +288,7 @@ class WizardTests(unittest.TestCase):
             self.assertEqual(kwargs['manifest'], {'entries': [{'path': 'private.csv'}]})
             return original(*args, **kwargs)
         support.import_source = check_manifest
-        code, _, _, _ = self.run_guide('\n\n\n2\n/private/data\n\n\n\nn\n', support)
+        code, _, _, _ = self.run_guide('\n\n2\n/private/data\n\n\n\nn\n', support)
         self.assertEqual(code, 0)
 
     def test_noninteractive_rejected_and_help_allowed(self):
@@ -247,7 +297,7 @@ class WizardTests(unittest.TestCase):
             self.assertEqual(wizard.main(['--help']), 0)
 
     def pending_personal(self):
-        return {'version': 1, 'image': {'reference': 'selected:local', 'id': 'sha256:installed', 'created': 'today'}, 'docker': {'fingerprint': 'chosen-daemon', 'label': 'local Docker'}, 'storage': {'kind': 'volume', 'name': 'chosen'}, 'project': 'mine', 'starter': {'kind': 'personal', 'destination': 'my-data'}, 'operation': '11111111-1111-4111-8111-111111111111', 'stage': 6, 'allowRestricted': True}
+        return {'version': 2, 'image': {'reference': 'selected:local', 'id': 'sha256:installed', 'created': 'today'}, 'docker': {'fingerprint': 'chosen-daemon', 'label': 'local Docker'}, 'storage': {'kind': 'volume', 'name': 'chosen'}, 'project': 'default', 'starter': {'kind': 'personal', 'destination': 'my-data'}, 'operation': '11111111-1111-4111-8111-111111111111', 'stage': 5, 'allowRestricted': True}
 
     def test_modified_or_deleted_receipt_never_recopies(self):
         for outcome in ('modified', 'deleted'):
@@ -255,7 +305,7 @@ class WizardTests(unittest.TestCase):
                 support = Support()
                 support.pending = self.pending_personal()
                 support.exists = support.volume = True
-                support.receipt = {'state': 'verified', 'outcome': outcome, 'project': 'mine', 'destination': 'my-data'}
+                support.receipt = {'state': 'verified', 'outcome': outcome, 'project': 'default', 'destination': 'my-data'}
                 support.children = ['my-data'] if outcome == 'modified' else []
                 code, support, output, _ = self.run_guide('\n\nn\n', support)
                 self.assertEqual(code, 0)
@@ -266,7 +316,7 @@ class WizardTests(unittest.TestCase):
         support = Support()
         support.pending = self.pending_personal()
         support.exists = support.volume = True
-        support.receipt = {'state': 'staged', 'outcome': 'staged', 'project': 'mine', 'destination': 'my-data'}
+        support.receipt = {'state': 'staged', 'outcome': 'staged', 'project': 'default', 'destination': 'my-data'}
         code, support, output, _ = self.run_guide('\n\nn\n', support)
         self.assertEqual(code, 0)
         actions = [event[1] for event in support.events if isinstance(event, tuple) and event[0] == 'operation']
@@ -278,11 +328,11 @@ class WizardTests(unittest.TestCase):
         def changed(*args, **kwargs):
             raise SetupError('Source permissions changed after approval.', 'source_changed')
         support.import_source = changed
-        code, support, output, _ = self.run_guide('\n\n\n2\n/private/data\n\n\n\n', support)
+        code, support, output, _ = self.run_guide('\n\n2\n/private/data\n\n\n\n', support)
         self.assertEqual(code, 1)
         self.assertIsNone(support.saved)
         self.assertEqual(support.events.count('manifest'), 1)
-        self.assertNotIn('Step 7', output)
+        self.assertNotIn('Step 6', output)
 
     def test_profile_failure_retries_saving_not_copying(self):
         support = Support()
@@ -294,11 +344,11 @@ class WizardTests(unittest.TestCase):
                 raise OSError('disk full')
             original(profile, guide)
         support.save_profile = save
-        code, support, output, _ = self.run_guide('\n\n\n2\n/private/data\n\n\n\n\n\nn\n', support)
+        code, support, output, _ = self.run_guide('\n\n2\n/private/data\n\n\n\n\n\nn\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(len([event for event in support.events if isinstance(event, tuple) and event[0] == 'import']), 1)
-        self.assertIn('Your project files are ready. We still need to save', output)
-        self.assertEqual(output.count('Prepare this project? [Y/n]:'), 2)
+        self.assertIn('Your workspace files are ready. We still need to save', output)
+        self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 2)
 
     def test_modified_cache_is_retained_and_fresh_sibling_is_planned(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -335,7 +385,7 @@ class WizardTests(unittest.TestCase):
         operation = support.pending['operation']
         support.pending['operation'] = None
         support.exists = support.volume = True
-        support.receipt = {'state': 'verified', 'outcome': 'unchanged', 'project': 'mine', 'destination': 'my-data', 'kind': 'import', 'operation': operation}
+        support.receipt = {'state': 'verified', 'outcome': 'unchanged', 'project': 'default', 'destination': 'my-data', 'kind': 'import', 'operation': operation}
         support.operations = [support.receipt]
         code, support, output, _ = self.run_guide('\n\nn\n', support)
         self.assertEqual(code, 0)
@@ -346,7 +396,7 @@ class WizardTests(unittest.TestCase):
         support.exists = support.volume = True
         support.children = ['wattle-creek', 'wattle-creek-2']
         support.samples = [{'state': 'verified', 'outcome': 'unchanged', 'project': 'default', 'destination': 'wattle-creek-2', 'kind': 'samples', 'operation': '11111111-1111-4111-8111-111111111111'}]
-        code, support, output, _ = self.run_guide('\n\n\n2\n\nn\n', support)
+        code, support, output, _ = self.run_guide('\n\n2\n\nn\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['destination'], 'wattle-creek-2')
         self.assertNotIn('Adding Wattle Creek samples', output)
@@ -355,7 +405,7 @@ class WizardTests(unittest.TestCase):
         support = Support()
         support.exists = support.volume = True
         support.samples = [{'state': 'verified', 'outcome': 'deleted', 'project': 'default', 'destination': 'wattle-creek', 'kind': 'samples', 'operation': '11111111-1111-4111-8111-111111111111'}]
-        code, support, _, _ = self.run_guide('\n\n\n2\n\n\nn\n', support)
+        code, support, _, _ = self.run_guide('\n\n2\n\n\nn\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['destination'], 'wattle-creek-2')
 
@@ -365,13 +415,13 @@ class WizardTests(unittest.TestCase):
         self.assertIsNone(support.saved)
         self.assertNotIn('volume', support.events)
         self.assertIn('Workspace', output)
-        self.assertEqual(output.count('Step 2 of 7:'), 1)
+        self.assertEqual(output.count('Step 2 of 6:'), 1)
         self.assertNotIn('pending', support.events)
 
     def test_back_from_completed_change_menu_returns_to_launch_without_reapply(self):
-        code, support, output, _ = self.run_guide('\n\n\n\n\nb\nb\nn\n')
+        code, support, output, _ = self.run_guide('\n\n\n\nb\nb\nn\n')
         self.assertEqual(code, 0)
-        self.assertEqual(output.count('Prepare this project? [Y/n]:'), 1)
+        self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 1)
         self.assertEqual(support.events.count('save'), 1)
 
 

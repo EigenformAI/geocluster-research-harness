@@ -62,7 +62,7 @@ class CommonTests(unittest.TestCase):
     def test_profiles_are_bounded_data_not_shell_and_preserve_previous(self):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(common, 'STATE', Path(directory)):
-                profile = {'version': 1, 'image': {'reference': 'runtime:test',
+                profile = {'version': 2, 'image': {'reference': 'runtime:test',
                     'id': 'sha256:' + 'a' * 64, 'created': 'today'},
                     'docker': {'fingerprint': 'b' * 64, 'label': 'local Linux Docker'},
                     'storage': {'kind': 'volume', 'name': 'a-workspace'},
@@ -80,7 +80,7 @@ class CommonTests(unittest.TestCase):
                     return real_write(parent, name, raw)
                 with patch.object(common, '_write', side_effect=failed_settings):
                     with self.assertRaisesRegex(OSError, 'simulated'):
-                        common.save_profile({**profile, 'project': 'another'}, 'new guide\n')
+                        common.save_profile({**profile, 'storage': {'kind': 'volume', 'name': 'another'}}, 'new guide\n')
                 self.assertEqual(common.load_profile(), profile)
                 self.assertEqual((Path(directory) / 'next-steps.txt').read_text(), 'first-use guide\n')
                 (Path(directory) / 'setup.json').write_text('{"version":1,"version":1}')
@@ -91,7 +91,41 @@ class CommonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with patch.object(common, 'STATE', Path(directory)):
                 with self.assertRaises(common.SetupError):
-                    common.save_pending({'version': 1, 'source': '/private/folder'})
+                    common.save_pending({'version': 2, 'source': '/private/folder'})
+
+    def test_pending_uses_six_stages_and_only_the_fixed_workspace(self):
+        for stage in range(1, 7):
+            common.validate_profile({'version': 2, 'stage': stage, 'project': 'default'}, True)
+        common.validate_profile({'version': 2, 'stage': 1}, True)
+        common.validate_profile({'version': 2, 'stage': 1, 'project': None}, True)
+        for value in ({'version': 2, 'stage': 7}, {'version': 2, 'project': 'Drilling_2026'}):
+            with self.assertRaises(common.SetupError):
+                common.validate_profile(value, True)
+
+    def test_old_settings_are_rejected_without_docker_or_file_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory, '.geocluster')
+            state.mkdir(mode=0o700)
+            workspace = Path(directory, 'workspace', 'Drilling_2026')
+            workspace.mkdir(parents=True)
+            retained = workspace / 'input.csv'
+            retained.write_text('keep this data\n')
+            with patch.object(common, 'STATE', state), patch.object(common, 'Docker') as docker:
+                for name, loader in (('setup.json', common.load_profile), ('pending.json', common.load_pending)):
+                    record = state / name
+                    raw = json.dumps({'version': 1, 'project': 'Drilling_2026'}).encode()
+                    record.write_bytes(raw)
+                    record.chmod(0o600)
+                    with self.assertRaises(common.SetupError) as error:
+                        loader()
+                    message = str(error.exception)
+                    self.assertIn('mv -T -n --', message)
+                    self.assertIn('.geocluster', message)
+                    self.assertIn('retain', message.lower())
+                    self.assertIn('./scripts/setup.sh', message)
+                    self.assertEqual(record.read_bytes(), raw)
+                docker.assert_not_called()
+            self.assertEqual(retained.read_text(), 'keep this data\n')
 
     def test_invalid_guided_names_are_not_rewritten(self):
         for name in ('datasets', '_private', '.runtime', '../x', 'a b', 'x' * 65):
@@ -99,28 +133,37 @@ class CommonTests(unittest.TestCase):
                 common.validate_project(name)
         self.assertEqual(common.validate_project('Drill_2026-11'), 'Drill_2026-11')
 
-    def test_saved_nondefault_launch_pins_image_and_project(self):
-        profile = {'version': 1, 'image': {'reference': 'runtime:mutable',
+    def test_saved_launch_pins_image_docker_and_fixed_workspace(self):
+        profile = {'version': 2, 'image': {'reference': 'runtime:mutable',
             'id': 'sha256:' + 'a' * 64, 'created': 'today'},
             'docker': {'fingerprint': 'b' * 64, 'label': 'local Linux Docker'},
             'storage': {'kind': 'volume', 'name': 'my-geology'},
-            'project': 'Drilling_2026', 'operation': None,
+            'project': 'default', 'operation': None,
             'starter': {'kind': 'existing', 'destination': None}}
         docker = MagicMock()
         docker.inspect.return_value = {'exists': True}
         with patch.object(common, 'Docker', return_value=docker), patch.object(common.subprocess, 'call', return_value=0) as execute:
             self.assertEqual(common.launch(profile), 0)
             docker.image.assert_called_once_with(profile['image']['id'])
+            docker.inspect.assert_called_once_with(profile['storage'], 'default', profile['image']['id'])
+            docker.check.assert_called_with(profile['docker']['fingerprint'])
             command = execute.call_args.args[0]
             self.assertIn('my-geology', command)
-            self.assertIn('Drilling_2026', command)
-            self.assertIn('--require-existing-project', command)
+            self.assertNotIn('--project', command)
+            self.assertIn('--require-existing-workspace', command)
             self.assertNotIn('runtime:mutable', command)
             docker.inspect.return_value = {'exists': False}
             execute.reset_mock()
-            with self.assertRaisesRegex(common.SetupError, "couldn't find Drilling_2026"):
+            with self.assertRaisesRegex(common.SetupError, "couldn't find.*workspace"):
                 common.launch(profile)
             execute.assert_not_called()
+        with patch.object(common, 'Docker') as docker:
+            for incompatible in ({**profile, 'project': 'Drilling_2026'},
+                                 {**profile, 'version': 1, 'project': 'Drilling_2026'},
+                                 {**profile, 'version': 1}):
+                with self.assertRaises(common.SetupError):
+                    common.launch(incompatible)
+            docker.assert_not_called()
 
     def test_unsafe_settings_are_not_repaired(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -134,7 +177,7 @@ class CommonTests(unittest.TestCase):
 
     def test_failed_first_profile_does_not_leave_an_orphan_guide(self):
         with tempfile.TemporaryDirectory() as directory:
-            profile = {'version': 1, 'image': {'reference': 'runtime:test',
+            profile = {'version': 2, 'image': {'reference': 'runtime:test',
                 'id': 'sha256:' + 'a' * 64, 'created': 'today'},
                 'docker': {'fingerprint': 'b' * 64, 'label': 'local Linux Docker'},
                 'storage': {'kind': 'volume', 'name': 'test-workspace'},

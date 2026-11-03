@@ -68,6 +68,13 @@ models. No `LLM_PROXY_URL`, `IDE_LLM_TOKEN`, machine credential, or backend acti
 endpoint is required. Native startup publishes no host ports. TUI exit shuts down
 its owned local services rather than leaving a gateway running.
 
+Native host commands use one workspace containing data folders, with content at
+`/workspace/default/`. With bind storage, that is `<workspace>/default/` on the
+Docker host. Private state stays alongside the content directory. Native commands
+do not offer project naming or selection. Arbitrary local folders are not
+discovered. Import local data with `./scripts/workspace-files.sh import` when
+using the default Docker-managed volume.
+
 Native user configuration uses ordinary OpenCode `opencode.json` or
 `opencode.jsonc`. Its writable XDG config is separate from bundled geology config.
 The native XDG config root is `/workspace/.runtime/native/opencode/config`.
@@ -102,7 +109,7 @@ processing is disabled unless explicitly selected through native options below.
 Native processing uses the installed processor's standalone interface, not managed
 admission, model policy, or aggregate activity. It exposes seven processor MCP
 tools to DataOps and Standard mode. Results and job history are workspace-wide,
-under `/workspace/.runtime/native/processing/<PROJECT_ID>/`. The default processor
+under `/workspace/.runtime/native/processing/default/`. The default processor
 endpoint is private loopback port `8765`. See
 [native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md) for setup,
 recovery, custom-provider declarations, and retained-state protection.
@@ -110,7 +117,8 @@ recovery, custom-provider declarations, and retained-state protection.
 Both profiles hold the same exclusive retained-volume lifecycle lock and check a
 root-controlled profile marker. Concurrent ownership and cross-profile reuse are
 unsupported. To change profiles, transfer only ordinary data and saved results
-from `/workspace/<PROJECT_ID>/` into a fresh volume's project directory. Never
+from the source deployment's content directory (`/workspace/default/` in native
+mode) into a fresh volume's content directory. Never
 copy the enclosing volume root, `.runtime`, or `.ide-state`.
 
 ## Local workspace sharing

@@ -20,6 +20,7 @@ from setup_transfer import (validate_project as _validate_project, validate_dest
                             capture_source, build_archive, canonical_hash)
 
 LIMIT = 65536
+NATIVE_PROJECT = 'default'
 IMAGE_ID = re.compile(r'^sha256:[0-9a-f]{64}$')
 FINGERPRINT = re.compile(r'^[0-9a-f]{64}$')
 VOLUME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$')
@@ -92,12 +93,21 @@ def validate_storage(storage):
     return storage
 
 
+def _incompatible_settings(reason, code):
+    sibling = STATE.with_name(STATE.name + '-saved-' + uuid.uuid4().hex[:8])
+    return SetupError(reason + '\nNative setup now uses one workspace.\n'
+                      'Move the local .geocluster settings directory aside without overwriting another backup:\n  '
+                      + shlex.join(['mv', '-T', '-n', '--', str(STATE), str(sibling)])
+                      + '\nRetain the moved settings and all workspace files. Then run ./scripts/setup.sh again.\n'
+                      'New setup uses default/ inside the selected storage; it does not discover or migrate named folders.', code)
+
+
 def validate_profile(value, pending=False):
+    if isinstance(value, dict) and 'version' in value and (type(value['version']) is not int or value['version'] != 2):
+        raise _incompatible_settings('These saved settings use an unsupported setup version.', 'settings_version')
     required = ('version', 'image', 'docker', 'storage', 'project', 'operation', 'starter')
     _fields(value, ('version',) if pending else required,
             tuple(set(required) - {'version'}) + ('stage', 'allowRestricted', 'completed') if pending else ())
-    if type(value['version']) is not int or value['version'] != 1:
-        raise SetupError('Unsupported saved setup version. Run ./scripts/setup.sh again.')
     image = value.get('image')
     if image is not None:
         _fields(image, ('reference', 'id', 'created'))
@@ -121,9 +131,10 @@ def validate_profile(value, pending=False):
     elif not pending:
         raise SetupError('No workspace was saved.')
     if value.get('project') is not None:
-        validate_project(value['project'])
+        if value['project'] != NATIVE_PROJECT:
+            raise _incompatible_settings('These saved settings select a named project instead of the fixed internal directory default/.', 'settings_project')
     elif not pending:
-        raise SetupError('No project was saved.')
+        raise SetupError('The saved workspace requires the fixed internal directory default/.')
     if value.get('operation') is not None:
         try:
             if str(uuid.UUID(value['operation'])) != value['operation']:
@@ -141,7 +152,7 @@ def validate_profile(value, pending=False):
             raise SetupError('Starting files require a destination folder.')
     elif not pending:
         raise SetupError('No starting-file choice was saved.')
-    if 'stage' in value and (type(value['stage']) is not int or not 1 <= value['stage'] <= 7):
+    if 'stage' in value and (type(value['stage']) is not int or not 1 <= value['stage'] <= 6):
         raise SetupError('Invalid pending setup stage.')
     if 'allowRestricted' in value and type(value['allowRestricted']) is not bool:
         raise SetupError('Invalid copy-access decision.')
@@ -493,10 +504,11 @@ def import_source(docker, storage, image_id, project, destination, source, allow
 
 
 def explicit_command(profile):
+    validate_profile(profile)
     storage = profile['storage']
     return [str(REPO / 'scripts/run-runtime-tui.sh'), '--image', profile['image']['id'],
             '--workspace-volume' if storage['kind'] == 'volume' else '--workspace-root',
-            storage.get('name', storage.get('path')), '--project', profile['project'], '--require-existing-project']
+            storage.get('name', storage.get('path')), '--require-existing-workspace']
 
 
 def launch(profile):
@@ -505,18 +517,18 @@ def launch(profile):
     try:
         docker.check(profile['docker']['fingerprint'])
     except SetupError as error:
-        raise SetupError("This project uses a different Docker connection. Run ./scripts/setup.sh to choose where you'd like to work.", 'docker_changed') from error
+        raise SetupError("This workspace uses a different Docker connection. Run ./scripts/setup.sh to choose where you'd like to work.", 'docker_changed') from error
     try:
         docker.image(profile['image']['id'])
     except SetupError as error:
         if error.code == 'image_missing':
             raise SetupError('The saved GeoCluster image is no longer installed. Run ./scripts/setup.sh to build GeoCluster or choose an installed image.', error.code) from error
         raise
-    info = docker.inspect(profile['storage'], profile['project'], profile['image']['id'])
+    info = docker.inspect(profile['storage'], NATIVE_PROJECT, profile['image']['id'])
     if not info.get('exists'):
-        raise SetupError(f"We couldn't find {profile['project']} in the selected workspace. Run ./scripts/setup.sh to locate it or create a new project.", 'project_missing')
+        raise SetupError("We couldn't find the saved workspace content in default/ inside the selected storage. Retain your files and run ./scripts/setup.sh to choose or prepare workspace storage.", 'workspace_missing')
     docker.check(profile['docker']['fingerprint'])
-    print(f"Opening project: {profile['project']}", flush=True)
+    print('Opening workspace', flush=True)
     return subprocess.call(['bash', *explicit_command(profile)], cwd=REPO)
 
 

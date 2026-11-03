@@ -1544,15 +1544,15 @@ validate_launch() {
 
 validate_existing_project() {
     case "$PROJECT_ID" in ''|.|..|.runtime|.ide-state|*/*)
-        echo 'The selected project must name a non-reserved workspace directory.' >&2; return 2 ;;
+        echo 'The workspace data directory must have a non-reserved name.' >&2; return 2 ;;
     esac
     if [ -L "$WORKSPACE_DIR" ] || { [ -e "$WORKSPACE_DIR" ] && [ ! -d "$WORKSPACE_DIR" ]; }; then
-        echo "The selected project $PROJECT_ID must be a real directory, not a symlink or another file type." >&2
+        echo "The workspace data path $WORKSPACE_DIR must be a real directory, not a symlink or another file type." >&2
         return 2
     fi
     if [ ! -d "$WORKSPACE_DIR" ]; then
-        echo "The selected project $PROJECT_ID does not exist." >&2
-        echo 'Run ./scripts/setup.sh to locate it or create a new project.' >&2
+        echo "The workspace data directory $WORKSPACE_DIR does not exist." >&2
+        echo 'Run ./scripts/setup.sh to check your storage and prepare the workspace.' >&2
         return 2
     fi
     # Reuse setup's held-descriptor validation, not native startup's permission repair.
@@ -1569,8 +1569,8 @@ try:
         helper['transfer'].reject_acl(project)
         workspace.assert_project(sys.argv[3], project)
 except (ValueError, OSError, UnicodeError, RecursionError) as error:
-    print('Saved project validation failed: ' + str(error), file=sys.stderr)
-    print('Run ./scripts/setup.sh to locate the project or choose another project.', file=sys.stderr)
+    print('Saved workspace validation failed: ' + str(error), file=sys.stderr)
+    print('Run ./scripts/setup.sh to check your storage and workspace files.', file=sys.stderr)
     sys.exit(2)
 PY
 }

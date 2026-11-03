@@ -109,7 +109,7 @@ test("required saved project stays absent when locked startup cannot find it", a
 	const fixture = await startupFixture(t)
 	const result = fixture.launch()
 	assert.equal(result.status, 2, result.stdout + result.stderr)
-	assert.match(result.stderr, /project.*(missing|not.*exist|couldn't find)|couldn't find.*default/i)
+	assert.match(result.stderr, /workspace data directory.*does not exist/i)
 	assert.doesNotMatch(result.stdout, /NATIVE_STARTED/)
 	await assert.rejects(fs.lstat(path.join(fixture.workspace, "default")), { code: "ENOENT" })
 })
@@ -160,7 +160,7 @@ test("required project rejects links and non-directories without changing them",
 		const before = await fs.lstat(path.join(fixture.workspace, project), { bigint: true })
 		const result = fixture.launch(project)
 		assert.equal(result.status, 2, result.stdout + result.stderr)
-		assert.match(result.stderr, /project.*(real|safe|directory|symlink)/i)
+		assert.match(result.stderr, /workspace data path.*real directory/i)
 		const after = await fs.lstat(path.join(fixture.workspace, project), { bigint: true })
 		assert.equal(after.ino, before.ino)
 		assert.equal(after.ctimeNs, before.ctimeNs)
@@ -175,7 +175,7 @@ test("required project rejects reserved names and traversal before native prepar
 	for (const project of [".", "..", ".runtime", ".ide-state", "nested/project"]) {
 		const result = fixture.launch(project)
 		assert.equal(result.status, 2, result.stdout + result.stderr)
-		assert.match(result.stderr, /project.*(reserved|directory)/i)
+		assert.match(result.stderr, /workspace data directory.*non-reserved/i)
 		assert.doesNotMatch(result.stdout, /NATIVE_STARTED/)
 	}
 	await assert.rejects(fs.lstat(path.join(fixture.workspace, "nested")), { code: "ENOENT" })
@@ -189,14 +189,14 @@ test("ordinary explicit startup still creates a missing project", async (t) => {
 	assert.equal(await fs.readFile(path.join(fixture.workspace, "new-project/startup"), "utf8"), "prepared")
 })
 
-test("explicit launcher forwards the existing-project requirement only when requested", async (t) => {
+test("explicit launcher forwards the existing-workspace requirement only when requested", async (t) => {
 	const dir = await fs.mkdtemp("/tmp/opencode/setup-launcher-")
 	t.after(() => fs.rm(dir, { recursive: true, force: true }))
 	await fs.writeFile(path.join(dir, "docker"), '#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURE"\n', { mode: 0o755 })
 	for (const required of [false, true]) {
 		const capture = path.join(dir, required ? "required" : "normal")
-		const result = spawnSync("python3", ["-c", ptyRunner, "bash", path.join(root, "scripts/run-runtime-tui.sh"), ...(required ? ["--require-existing-project"] : [])], {
-			env: { PATH: `${dir}:${process.env.PATH}`, CAPTURE: capture, RUNTIME_REQUIRE_EXISTING_PROJECT: "1" }, encoding: "utf8", timeout: 5000,
+		const result = spawnSync("python3", ["-c", ptyRunner, "bash", path.join(root, "scripts/run-runtime-tui.sh"), ...(required ? ["--require-existing-workspace"] : [])], {
+			env: { PATH: `${dir}:${process.env.PATH}`, CAPTURE: capture, RUNTIME_REQUIRE_EXISTING_PROJECT: "1", PROJECT_ID: "old-named-project" }, encoding: "utf8", timeout: 5000,
 		})
 		assert.equal(result.status, 0, result.stdout + result.stderr)
 		const args = (await fs.readFile(capture, "utf8")).trim().split("\n")
@@ -205,5 +205,20 @@ test("explicit launcher forwards the existing-project requirement only when requ
 		assert.ok(args.includes("RUNTIME_PROFILE=native"))
 		assert.ok(args.includes("PROJECT_ID=default"))
 		assert.equal(args.at(-1), "tui")
+	}
+})
+
+test("explicit launcher rejects project selection through flags or engine environment before Docker", async (t) => {
+	const dir = await fs.mkdtemp("/tmp/opencode/setup-selector-")
+	t.after(() => fs.rm(dir, { recursive: true, force: true }))
+	const capture = path.join(dir, "calls")
+	await fs.writeFile(path.join(dir, "docker"), '#!/bin/sh\nprintf called > "$CAPTURE"\n', { mode: 0o755 })
+	for (const args of [["--project", "named"], ["--project=default"], ["--require-existing-project"], ["--engine-env", "PROJECT_ID"]]) {
+		const result = spawnSync("python3", ["-c", ptyRunner, "bash", path.join(root, "scripts/run-runtime-tui.sh"), ...args], {
+			env: { PATH: `${dir}:${process.env.PATH}`, CAPTURE: capture, PROJECT_ID: "named" }, encoding: "utf8", timeout: 5000,
+		})
+		assert.equal(result.status, 2, result.stdout + result.stderr)
+		assert.match(result.stdout, /unknown option|removed|reserved/i)
+		await assert.rejects(fs.stat(capture), { code: "ENOENT" })
 	}
 })
