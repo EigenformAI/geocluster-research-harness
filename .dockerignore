@@ -48,6 +48,7 @@ docker-compose*.yml
 sample-workspace/
 local-workspace/
 native-workspace/
+.geocluster/
 .geocluster-local/
 logs/
 

@@ -6,6 +6,7 @@ image="${RUNTIME_TUI_IMAGE:-geocluster-runtime:latest}"
 volume=geocluster-native-workspace
 workspace_root=''
 project=default
+require_existing_project=false
 names=()
 processing_model=''
 processing_descriptor=''
@@ -33,8 +34,12 @@ while [ "$#" -gt 0 ]; do
                     names+=("$name") ;;
             esac
             shift 2 ;;
+        --require-existing-project)
+            require_existing_project=true
+            shift ;;
         --help|-h)
-            echo 'usage: scripts/run-runtime-tui.sh [--image IMAGE] [--workspace-volume NAME | --workspace-root DIRECTORY] [--project ID] [--engine-env NAME]... [--processing-model PROVIDER/MODEL[#VARIANT]] [--processing-engine-descriptor FILE]'
+            echo 'usage: scripts/run-runtime-tui.sh [--image IMAGE] [--workspace-volume NAME | --workspace-root DIRECTORY] [--project ID] [--require-existing-project] [--engine-env NAME]... [--processing-model PROVIDER/MODEL[#VARIANT]] [--processing-engine-descriptor FILE]'
+            echo '  --require-existing-project  Refuse a missing or unsafe project under the workspace lock.'
             exit 0 ;;
         *) die "unknown option: $1" ;;
     esac
@@ -54,6 +59,11 @@ if [ -n "$workspace_root" ]; then
     mount=(--mount "type=bind,src=$(realpath "$workspace_root"),dst=/workspace")
 fi
 forward=()
+pull=()
+if [ "$require_existing_project" = true ]; then
+    forward+=(-e RUNTIME_REQUIRE_EXISTING_PROJECT=1)
+    pull=(--pull=never)
+fi
 for name in "${names[@]}"; do forward+=(-e "$name"); done
 if [ -n "$processing_model" ]; then forward+=(-e "RUNTIME_NATIVE_PROCESSING_MODEL=$processing_model"); fi
 if [ -n "$processing_descriptor" ]; then
@@ -63,5 +73,5 @@ fi
 joined=$(IFS=,; echo "${names[*]}")
 # -e NAME lets Docker read the value from its environment; never put it in argv.
 exec docker run --rm -it --init --no-healthcheck --stop-timeout 245 \
-    "${mount[@]}" -e RUNTIME_PROFILE=native -e PROJECT_ID="$project" \
+    "${pull[@]}" "${mount[@]}" -e RUNTIME_PROFILE=native -e PROJECT_ID="$project" \
     -e RUNTIME_NATIVE_ENGINE_ENV="$joined" "${forward[@]}" "$image" tui

@@ -1542,6 +1542,39 @@ validate_launch() {
     fi
 }
 
+validate_existing_project() {
+    case "$PROJECT_ID" in ''|.|..|.runtime|.ide-state|*/*)
+        echo 'The selected project must name a non-reserved workspace directory.' >&2; return 2 ;;
+    esac
+    if [ -L "$WORKSPACE_DIR" ] || { [ -e "$WORKSPACE_DIR" ] && [ ! -d "$WORKSPACE_DIR" ]; }; then
+        echo "The selected project $PROJECT_ID must be a real directory, not a symlink or another file type." >&2
+        return 2
+    fi
+    if [ ! -d "$WORKSPACE_DIR" ]; then
+        echo "The selected project $PROJECT_ID does not exist." >&2
+        echo 'Run ./scripts/setup.sh to locate it or create a new project.' >&2
+        return 2
+    fi
+    # Reuse setup's held-descriptor validation, not native startup's permission repair.
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" <<'PY'
+import contextlib
+import runpy
+import sys
+
+try:
+    sys.path.insert(0, sys.argv[1])
+    helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+    with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+        project, _ = workspace.project(sys.argv[3], 'existing')
+        helper['transfer'].reject_acl(project)
+        workspace.assert_project(sys.argv[3], project)
+except (ValueError, OSError, UnicodeError, RecursionError) as error:
+    print('Saved project validation failed: ' + str(error), file=sys.stderr)
+    print('Run ./scripts/setup.sh to locate the project or choose another project.', file=sys.stderr)
+    sys.exit(2)
+PY
+}
+
 launch_runtime() {
     local locked=false
     if [ "${1:-}" = --runtime-lock-held ]; then locked=true; shift; fi
@@ -1551,6 +1584,11 @@ launch_runtime() {
     fi
     # The exec-held descriptor stays open until the owner and its services exit.
     [ -e /proc/self/fd/9 ] || { echo 'runtime lifecycle lock descriptor is missing' >&2; return 2; }
+    # Saved launches must not recreate a deleted project or repair an unsafe one.
+    # Check while locked, before native startup creates or normalizes any paths.
+    if [ "$RUNTIME_PROFILE" = native ] && [ "${RUNTIME_REQUIRE_EXISTING_PROJECT:-0}" = 1 ]; then
+        validate_existing_project || return $?
+    fi
     BOOT_START_MS=$(date +%s%3N 2>/dev/null || echo 0)
     BOOT_LAST_MS="$BOOT_START_MS"
     if [ "$RUNTIME_PROFILE" = native ]; then
