@@ -329,6 +329,39 @@ class RuntimeTests(unittest.TestCase):
         self.failure('unsafe_workspace', 'receipt', '--operation', record['operation'])
         self.assertTrue(stage.exists())
 
+    def test_completed_analysis_listing_omits_private_state_but_exports_only_public_results(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
+        sample_paths = self.success('list', '--project', 'default')['paths']
+        project = self.workspace / 'default'
+        run = project / 'runs/session-one'
+        results = run / 'results'
+        results.mkdir(parents=True)
+        (results / 'answer.csv').write_text('HOLE_ID\nWC141\n')
+        private = run / '_orchestrator'
+        private.mkdir()
+        (private / 'ledger.json').write_text('{"entries":[]}')
+        (private / 'internal-link').symlink_to('/etc/passwd')
+        (project / '.notes').mkdir()
+        expected = ['.notes', 'runs', 'runs/session-one', 'runs/session-one/results', *sample_paths]
+        listing = self.success('list', '--project', 'default')
+        self.assertEqual(listing['paths'], expected)
+        self.assertEqual(listing['total'], len(expected))
+        (project / '.env.local').write_text('private configuration')
+        self.assertEqual(self.success('list', '--project', 'default')['paths'], expected)
+        page = self.success('list', '--project', 'default', '--offset', '2', '--limit', '2')
+        self.assertEqual(page['paths'], expected[2:4])
+        self.assertEqual(page['total'], len(expected))
+        self.assertEqual(page['nextOffset'], 4)
+        self.assertTrue(page['hasMore'])
+        for path in ('runs/session-one/_orchestrator', 'runs/session-one/_orchestrator/ledger.json',
+                     '.env.local', 'runs/session-one'):
+            self.failure('reserved_path', 'export', '--project', 'default', '--path', path)
+        exported = self.run_helper('export', '--project', 'default', '--path', 'runs/session-one/results')
+        self.assertEqual(exported.returncode, 0, exported.stderr)
+        transfer.safe_extract(io.BytesIO(exported.stdout), str(self.base), 'results-export')
+        self.assertEqual((self.base / 'results-export/answer.csv').read_bytes(),
+                         (results / 'answer.csv').read_bytes())
+
     def test_private_exports_symlinks_hardlinks_and_special_objects_fail_closed(self):
         self.success('prepare', '--project', 'default', '--expect', 'absent')
         project = self.workspace / 'default'
@@ -348,12 +381,16 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(response['entry_type'], 'symlink')
         self.assertEqual(response['path_scope'], 'transfer_source')
         self.assertIn('separate import copy', response['hint'])
+        response = self.failure('unsafe_path', 'list', '--project', 'default', '--limit', '1')
+        self.assertEqual(response['entry_type'], 'symlink')
         link.unlink()
         os.link(ordinary / 'answer.txt', link)
         self.failure('unsafe_path', 'export', '--project', 'default', '--path', 'runs')
+        response = self.failure('unsafe_path', 'list', '--project', 'default', '--limit', '1')
+        self.assertEqual(response['entry_type'], 'file')
         link.unlink()
         os.mkfifo(link)
-        response = self.failure('unsafe_path', 'list', '--project', 'default')
+        response = self.failure('unsafe_path', 'list', '--project', 'default', '--limit', '1')
         self.assertEqual(response['path'], 'runs/session-one/results/bad')
         self.assertEqual(response['entry_type'], 'fifo')
         self.assertEqual(response['path_scope'], 'transfer_source')

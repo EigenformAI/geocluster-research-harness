@@ -509,7 +509,8 @@ def list_paths(workspace, args):
     if args.offset < 0 or not 1 <= args.limit <= 1000:
         transfer.fail('invalid_arguments', 'List requires offset >= 0 and limit 1–1000')
     # Listing validates types and identities, but does not hash potentially large
-    # result files. Unsafe entries outside the page must not be silently skipped.
+    # result files. Private subtrees are omitted; unsafe public entries outside
+    # the page must not be silently skipped.
     paths, count = [], 0
     def visit(fd, prefix):
         nonlocal count
@@ -518,6 +519,8 @@ def list_paths(workspace, args):
             count += 1
             if count > transfer.MAX_ENTRIES:
                 transfer.fail('invalid_path', 'Project exceeds the listing member limit')
+            if transfer.reserved(name):
+                continue
             path = prefix + '/' + name if prefix else name
             transfer.validate_path(path)
             info = os.stat(name, dir_fd=fd, follow_symlinks=False)
