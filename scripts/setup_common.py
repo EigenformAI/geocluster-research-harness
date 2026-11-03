@@ -17,7 +17,7 @@ REPO = Path(__file__).resolve().parent.parent
 STATE = REPO / '.geocluster'
 sys.path.insert(0, str(REPO / 'runtime'))
 from setup_transfer import (validate_project as _validate_project, validate_destination as _validate_destination,
-                            capture_source, build_archive, canonical_hash)
+                            capture_source, validate_archive_headers, build_archive, canonical_hash)
 
 LIMIT = 65536
 NATIVE_PROJECT = 'default'
@@ -30,6 +30,31 @@ class SetupError(ValueError):
     def __init__(self, message, code='failed', details=None):
         super().__init__(message)
         self.code, self.details = code, details or {}
+
+
+def _transfer_message(message, code, details):
+    if code not in ('unsafe_path', 'unsupported_path') or not isinstance(details.get('path'), str):
+        return message
+    if not isinstance(details.get('source'), str) and details.get('path_scope') != 'transfer_source':
+        return message
+    lines = []
+    source = details.get('source')
+    if isinstance(source, str):
+        lines.append('Source folder: ' + repr(source))
+        label = 'Offending path: '
+    else:
+        label = 'Offending path (relative to transfer source): '
+    lines.append(label + repr(details['path']))
+    lines.append('Reason: ' + message)
+    if isinstance(details.get('hint'), str) and details['hint']:
+        lines.append('Next step: ' + details['hint'])
+    return '\n'.join(lines)
+
+
+def _source_error(error, source, fallback_code):
+    code = getattr(error, 'code', fallback_code)
+    details = {**getattr(error, 'details', {}), 'source': os.path.abspath(os.fsdecode(source))}
+    return SetupError(_transfer_message(str(error), code, details), code, details)
 
 
 def validate_project(value):
@@ -331,7 +356,8 @@ class Docker:
             except (IndexError, ValueError):
                 pass
             if details:
-                raise SetupError(details['message'], details['error'], details)
+                raise SetupError(_transfer_message(details['message'], details['error'], details),
+                                 details['error'], details)
             if b'workspace volume is already owned by another runtime' in result.stderr:
                 raise SetupError('This workspace is open in another GeoCluster session or file operation. Close that session or let the copy finish, then retry.', 'workspace_busy')
             raise SetupError('Docker could not finish this action. Start Docker, or select a working Docker connection.', 'docker_failed')
@@ -472,8 +498,9 @@ class Docker:
 def prepare_import(source):
     try:
         manifest = capture_source(source)
+        validate_archive_headers(manifest)
     except (ValueError, OSError) as error:
-        raise SetupError(str(error), getattr(error, 'code', 'source_invalid')) from error
+        raise _source_error(error, source, 'source_invalid') from error
     return manifest, manifest['restricted']
 
 
@@ -488,7 +515,7 @@ def import_source(docker, storage, image_id, project, destination, source, allow
         try:
             length = build_archive(source, manifest, archive)
         except (ValueError, OSError) as error:
-            raise SetupError(str(error), getattr(error, 'code', 'source_changed')) from error
+            raise _source_error(error, source, 'source_changed') from error
         header = json.dumps({'project': project, 'destination': destination,
                              'allowRestricted': allow_restricted, 'manifestHash': canonical_hash(manifest),
                              'archiveLength': length, 'expect': expect}, sort_keys=True).encode()

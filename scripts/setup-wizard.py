@@ -577,7 +577,7 @@ class Wizard:
                 manifest, restricted = self.support.prepare_import(source)
                 self.manifest = manifest
             except (OSError, ValueError) as exc:
-                self.say(f"We couldn't copy {source}: {exc}.\nChoose another source folder, or type b to return to starting files.")
+                self.say(f"We couldn't use this folder.\n{exc}\nChoose another source folder, or type b to return to starting files.")
                 continue
             entries = manifest.get('entries', []) if isinstance(manifest, dict) else manifest
             paths = [entry.get('path', '') if isinstance(entry, dict) else str(entry) for entry in entries]

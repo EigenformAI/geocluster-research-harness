@@ -22,6 +22,19 @@ HELPER = RUNTIME / 'setup-workspace.py'
 LOCK = RUNTIME / 'lifecycle-lock.py'
 
 
+class ErrorOutputTests(unittest.TestCase):
+    def test_surrogate_argument_remains_a_valid_json_error(self):
+        rejected = '--filename-' + os.fsdecode(b'\xff')
+        result = subprocess.run([sys.executable, '-B', str(HELPER), rejected],
+                                capture_output=True, timeout=20)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(result.stdout, b'')
+        response = json.loads(result.stderr)
+        self.assertEqual(response['error'], 'invalid_arguments')
+        self.assertIn(rejected, response['message'])
+        self.assertTrue(result.stderr.isascii())
+
+
 @unittest.skipUnless(os.geteuid() == 0, 'root fixture requires sudo -n or a root container')
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
@@ -145,6 +158,26 @@ class RuntimeTests(unittest.TestCase):
         (private / 'setup').chmod(0o750)
         self.failure('unsafe_workspace', 'inspect', '--project', 'default', locked=False)
         self.assertEqual(stat.S_IMODE((private / 'setup').stat().st_mode), 0o750)
+
+    def test_private_workspace_links_keep_generic_errors_without_import_advice(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        private = self.workspace / '.runtime'
+        for name, directory in (('.runtime', True), ('profile', False), ('owner.lock', False)):
+            with self.subTest(name=name):
+                item = private if directory else private / name
+                saved = item.with_name(item.name + '-saved')
+                item.rename(saved)
+                item.symlink_to(saved, target_is_directory=directory)
+                try:
+                    arguments = ('receipt', '--operation', '00000000-0000-4000-8000-000000000000') if name == 'owner.lock' else ('inspect', '--project', 'default')
+                    response = self.failure('unsafe_path', *arguments, locked=False)
+                    self.assertEqual(response['message'], 'Expected an ordinary ' + ('directory' if directory else 'file'))
+                    self.assertNotIn('hint', response)
+                    self.assertNotIn('path_scope', response)
+                    self.assertNotIn('import', response['message'])
+                finally:
+                    item.unlink()
+                    saved.rename(item)
 
     def test_edited_and_deleted_samples_are_never_restored(self):
         result = self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
@@ -310,13 +343,20 @@ class RuntimeTests(unittest.TestCase):
             self.failure('reserved_path', 'export', '--project', 'default', '--path', name)
         link = ordinary / 'bad'
         link.symlink_to('/etc/passwd')
-        self.failure('unsafe_path', 'export', '--project', 'default', '--path', 'runs')
+        response = self.failure('unsafe_path', 'export', '--project', 'default', '--path', 'runs')
+        self.assertEqual(response['path'], 'session-one/results/bad')
+        self.assertEqual(response['entry_type'], 'symlink')
+        self.assertEqual(response['path_scope'], 'transfer_source')
+        self.assertIn('separate import copy', response['hint'])
         link.unlink()
         os.link(ordinary / 'answer.txt', link)
         self.failure('unsafe_path', 'export', '--project', 'default', '--path', 'runs')
         link.unlink()
         os.mkfifo(link)
-        self.failure('unsafe_path', 'list', '--project', 'default')
+        response = self.failure('unsafe_path', 'list', '--project', 'default')
+        self.assertEqual(response['path'], 'runs/session-one/results/bad')
+        self.assertEqual(response['entry_type'], 'fifo')
+        self.assertEqual(response['path_scope'], 'transfer_source')
 
     def test_same_filesystem_mount_boundary_check(self):
         root = os.open('/', transfer.DIRECTORY_FLAGS)

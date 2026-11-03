@@ -2,6 +2,7 @@
 """Locked native project preparation and create-only file transfers."""
 import argparse
 import fcntl
+import json
 import os
 from pathlib import Path
 import re
@@ -521,12 +522,12 @@ def list_paths(workspace, args):
             transfer.validate_path(path)
             info = os.stat(name, dir_fd=fd, follow_symlinks=False)
             directory = stat.S_ISDIR(info.st_mode)
-            child = transfer.open_child(fd, name, directory=directory)
+            child = transfer.open_child(fd, name, directory=directory, path=path, transfer_source=True)
             try:
                 if directory:
                     paths.append(path)
                     visit(child, path)
-                transfer.assert_named(fd, name, child)
+                transfer.assert_named(fd, name, child, path=path)
             finally:
                 os.close(child)
         if transfer.snapshot(os.fstat(fd)) != before:
@@ -541,12 +542,12 @@ def list_paths(workspace, args):
 
 def export(workspace, args):
     project, _ = workspace.project(args.project, 'existing')
-    source = transfer.open_relative(project, args.path)
+    source = transfer.open_relative(project, args.path, transfer_source=True)
     try:
         manifest, _ = transfer.capture_fd(source)
         with tempfile.TemporaryFile() as archive:
             transfer.build_archive_fd(source, manifest, archive)
-            check = transfer.open_relative(project, args.path)
+            check = transfer.open_relative(project, args.path, transfer_source=True)
             try:
                 if transfer.identity(check) != transfer.identity(source):
                     transfer.fail('source_changed', 'Export source path changed')
@@ -621,5 +622,6 @@ if __name__ == '__main__':
     except (ValueError, OSError, UnicodeError, RecursionError) as error:
         code = getattr(error, 'code', 'io_error' if isinstance(error, OSError) else 'invalid_request')
         details = getattr(error, 'details', {})
-        print(transfer.canonical_bytes({'error': code, 'message': str(error), **details}).decode('utf-8'), file=sys.stderr)
+        print(json.dumps({'error': code, 'message': str(error), **details}, ensure_ascii=True,
+                         sort_keys=True, separators=(',', ':'), allow_nan=False), file=sys.stderr)
         sys.exit(2)

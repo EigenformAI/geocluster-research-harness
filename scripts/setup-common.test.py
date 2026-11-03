@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 import setup_common as common
+from setup_transfer import TransferError, capture_source
 
 
 class FakeDocker(common.Docker):
@@ -92,6 +93,176 @@ class CommonTests(unittest.TestCase):
             with patch.object(common, 'STATE', Path(directory)):
                 with self.assertRaises(common.SetupError):
                     common.save_pending({'version': 2, 'source': '/private/folder'})
+
+    def test_import_scan_reports_nested_entry_and_preserves_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / 'a').mkdir()
+            (source / 'a' / 'python3').write_text('ordinary file')
+            (source / 'work' / 'venv' / 'bin').mkdir(parents=True)
+            link = source / 'work' / 'venv' / 'bin' / 'python3'
+            link.symlink_to(source / 'missing')
+            with self.assertRaises(common.SetupError) as caught:
+                common.prepare_import(source)
+            error = caught.exception
+            self.assertEqual(error.code, 'unsafe_path')
+            self.assertEqual(error.details['path'], 'work/venv/bin/python3')
+            self.assertEqual(error.details['entry_type'], 'symlink')
+            self.assertEqual(error.details['source'], str(source))
+            self.assertIsInstance(error.__cause__, TransferError)
+            message = str(error)
+            self.assertEqual(message.count('Source folder:'), 1)
+            self.assertEqual(message.count(str(source)), 1)
+            self.assertIn('work/venv/bin/python3', message)
+            self.assertIn(str(error.__cause__), message)
+            self.assertIn(error.details['hint'], message)
+            self.assertTrue(link.is_symlink())
+            self.assertEqual((source / 'a' / 'python3').read_text(), 'ordinary file')
+
+    def test_import_preflight_rejects_archive_path_before_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            name = 'x' * 101
+            member = source / name
+            member.write_text('retain me')
+            before = member.stat()
+            docker = MagicMock()
+            with self.assertRaises(common.SetupError) as caught:
+                common.prepare_import(source)
+            error = caught.exception
+            self.assertEqual(error.code, 'unsupported_path')
+            self.assertEqual(error.details['path'], name)
+            self.assertEqual(error.details['source'], str(source))
+            self.assertIn(name, str(error))
+            self.assertIn('USTAR', str(error))
+            self.assertIsInstance(error.__cause__, TransferError)
+            with self.assertRaises(common.SetupError):
+                common.import_source(docker, {}, '', 'default', 'data', source, True)
+            docker.operation.assert_not_called()
+            self.assertEqual(member.read_text(), 'retain me')
+            self.assertEqual(member.stat().st_mode, before.st_mode)
+            # A valid Unicode name remains accepted by the same preflight.
+            member.rename(source / 'café.csv')
+            manifest, _ = common.prepare_import(source)
+            self.assertIn('café.csv', [entry['path'] for entry in manifest['entries']])
+
+    def test_late_archive_failure_preserves_diagnostic_without_runtime_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            name = 'é' * 51
+            (source / name).write_text('retain me')
+            manifest = capture_source(source)  # Deliberately bypass import preflight.
+            docker = MagicMock()
+            with self.assertRaises(common.SetupError) as caught:
+                common.import_source(docker, {}, '', 'default', 'data', source, True,
+                                     manifest=manifest)
+            error = caught.exception
+            self.assertEqual(error.code, 'unsupported_path')
+            self.assertEqual(error.details['path'], name)
+            self.assertEqual(error.details['source'], str(source))
+            self.assertIsInstance(error.__cause__, TransferError)
+            self.assertIn(str(error.__cause__), str(error))
+            self.assertIn(error.details['hint'], str(error))
+            self.assertIn(name, str(error))
+            docker.operation.assert_not_called()
+
+    def test_transfer_paths_keep_unicode_but_escape_terminal_controls(self):
+        source = '/private/café\n\x1b[2J\udcff'
+        path = "work/été'\n\r\t\x1b[2J\x85\u202e\udcff"
+        original = TransferError('unsafe_path', 'Symbolic links are not supported.',
+                                 path=path, entry_type='symlink', hint='Use a separate copy.')
+        with patch.object(common, 'capture_source', side_effect=original):
+            with self.assertRaises(common.SetupError) as caught:
+                common.prepare_import(source)
+        error = caught.exception
+        message = str(error)
+        self.assertEqual(error.details['path'], path)
+        self.assertEqual(error.details['source'], source)
+        self.assertEqual(original.details, {'path': path, 'entry_type': 'symlink',
+                                           'hint': 'Use a separate copy.'})
+        self.assertIs(error.__cause__, original)
+        self.assertIn('café', message)
+        self.assertIn('été', message)
+        for escaped in (r'\n', r'\r', r'\t', r'\x1b', r'\x85', r'\u202e', r'\udcff'):
+            self.assertIn(escaped, message)
+        for control in ('\r', '\t', '\x1b', '\x85', '\u202e', '\udcff'):
+            self.assertNotIn(control, message)
+        self.assertEqual(len(message.splitlines()), 4)
+
+    def test_runtime_transfer_errors_share_safe_formatting_and_hide_stderr(self):
+        docker = object.__new__(common.Docker)
+        path = 'work/café\n\x1b[2J\udcff'
+        payload = {'error': 'unsafe_path', 'message': 'Symbolic links are not supported.',
+                   'path': path, 'entry_type': 'symlink', 'hint': 'Use a separate copy.',
+                   'path_scope': 'transfer_source'}
+        stderr = b'connection: ssh://user:secret@private-host\n' + json.dumps(payload).encode()
+        result = subprocess.CompletedProcess([], 1, b'', stderr)
+        with patch.object(common.subprocess, 'run', return_value=result):
+            with self.assertRaises(common.SetupError) as caught:
+                docker._run(['run'])
+        error = caught.exception
+        self.assertEqual(error.code, payload['error'])
+        self.assertEqual(error.details, payload)
+        message = str(error)
+        self.assertIn('relative to transfer source', message)
+        self.assertNotIn('Source folder:', message)
+        self.assertIn('café', message)
+        self.assertIn(r'\n\x1b[2J\udcff', message)
+        self.assertIn(payload['message'], message)
+        self.assertIn(payload['hint'], message)
+        self.assertNotIn('secret', message)
+        self.assertNotIn('private-host', message)
+
+    def test_private_workspace_path_is_not_presented_as_an_import_source(self):
+        docker = object.__new__(common.Docker)
+        payload = {'error': 'unsafe_path', 'message': 'Expected an ordinary directory',
+                   'path': '.runtime'}
+        result = subprocess.CompletedProcess([], 1, b'', json.dumps(payload).encode())
+        with patch.object(common.subprocess, 'run', return_value=result):
+            with self.assertRaises(common.SetupError) as caught:
+                docker._run(['run'])
+        self.assertEqual(str(caught.exception), payload['message'])
+        self.assertEqual(caught.exception.details, payload)
+
+    def test_transfer_error_without_hint_does_not_invent_advice(self):
+        original = TransferError('unsupported_path', 'Header mode cannot fit the archive.',
+                                 path='été.csv', header_field='mode')
+        with patch.object(common, 'capture_source', side_effect=original):
+            with self.assertRaises(common.SetupError) as caught:
+                common.prepare_import('/private/source')
+        error = caught.exception
+        self.assertEqual(error.code, original.code)
+        self.assertEqual(error.details['header_field'], 'mode')
+        self.assertIn(str(original), str(error))
+        self.assertNotIn('Next step:', str(error))
+        self.assertNotIn('Shorten', str(error))
+
+    def test_unrelated_and_incomplete_errors_keep_original_messages(self):
+        docker = object.__new__(common.Docker)
+        for code, details in (('unsafe_workspace', {'path': 'elsewhere', 'hint': 'Not transfer advice.'}),
+                              ('unsafe_path', {}), ('unsupported_path', {'path': 42})):
+            with self.subTest(code=code, details=details):
+                original = TransferError(code, 'Original diagnostic.', **details)
+                with patch.object(common, 'capture_source', side_effect=original):
+                    with self.assertRaises(common.SetupError) as caught:
+                        common.prepare_import('/private/source')
+                self.assertEqual(str(caught.exception), 'Original diagnostic.')
+                self.assertEqual(caught.exception.details, {**details, 'source': '/private/source'})
+                self.assertIs(caught.exception.__cause__, original)
+                payload = {'error': code, 'message': 'Original diagnostic.', **details}
+                result = subprocess.CompletedProcess([], 1, b'', json.dumps(payload).encode())
+                with patch.object(common.subprocess, 'run', return_value=result):
+                    with self.assertRaises(common.SetupError) as caught:
+                        docker._run(['run'])
+                self.assertEqual(str(caught.exception), 'Original diagnostic.')
+                self.assertEqual(caught.exception.details, payload)
+        result = subprocess.CompletedProcess([], 1, b'', b'ssh://user:secret@private-host')
+        with patch.object(common.subprocess, 'run', return_value=result):
+            with self.assertRaises(common.SetupError) as caught:
+                docker._run(['run'])
+        self.assertEqual(caught.exception.code, 'docker_failed')
+        self.assertNotIn('secret', str(caught.exception))
+        self.assertNotIn('private-host', str(caught.exception))
 
     def test_pending_uses_six_stages_and_only_the_fixed_workspace(self):
         for stage in range(1, 7):

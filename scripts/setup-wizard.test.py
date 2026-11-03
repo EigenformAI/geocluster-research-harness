@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import setup_common as common
+
 
 spec = importlib.util.spec_from_file_location('setup_wizard', Path(__file__).with_name('setup-wizard.py'))
 wizard = importlib.util.module_from_spec(spec)
@@ -137,6 +139,33 @@ class WizardTests(unittest.TestCase):
         self.assertIn('WC141', text)
         self.assertIn('/connect', output)
         self.assertLess(support.events.index('image'), support.events.index('volume'))
+
+    def test_rejected_source_names_the_entry_once_and_allows_back(self):
+        for kind in ('link', 'long-name'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory, 'survey-data')
+                nested = source / 'work' / 'tools'
+                nested.mkdir(parents=True)
+                if kind == 'link':
+                    entry = nested / 'python3'
+                    entry.symlink_to('/a-target-that-must-not-be-opened')
+                else:
+                    entry = nested / ('a' * 101)
+                    entry.write_text('original')
+                support = Support()
+                support.prepare_import = common.prepare_import
+                output = io.StringIO()
+                guide = wizard.Wizard(support, io.StringIO(str(source) + '\nb\n'), output)
+                guide.docker = support.Docker()
+                with self.assertRaises(wizard.Back):
+                    guide.personal()
+                text = output.getvalue()
+                self.assertEqual(text.count(str(source)), 1, text)
+                self.assertIn(str(entry.relative_to(source)), text)
+                self.assertIn('Reason:', text)
+                self.assertIn('Next step:', text)
+                self.assertIn('Choose another source folder', text)
+                self.assertFalse(support.saved)
 
     def test_workspace_setup_needs_only_storage_and_starting_files(self):
         # Image approval, storage, no starting files, preparation approval, no launch.

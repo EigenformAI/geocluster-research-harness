@@ -164,16 +164,50 @@ def open_absolute(path):
         raise
 
 
-def open_child(parent, name, *, directory=False):
+def reject_entry(info, path, expected):
+    kinds = ((stat.S_ISLNK, 'symlink', 'Symbolic links'),
+             (stat.S_ISFIFO, 'fifo', 'Named pipes (FIFOs)'),
+             (stat.S_ISSOCK, 'socket', 'Sockets'),
+             (stat.S_ISCHR, 'character_device', 'Character devices'),
+             (stat.S_ISBLK, 'block_device', 'Block devices'),
+             (stat.S_ISREG, 'file', 'Ordinary files'),
+             (stat.S_ISDIR, 'directory', 'Directories'))
+    kind, label = next(((kind, label) for check, kind, label in kinds if check(info.st_mode)),
+                       ('unknown', 'Unsupported object types'))
+    if kind == 'symlink':
+        hint = ('Choose a data-only folder, or prepare a separate import copy without '
+                'symbolic links. Original files are not changed.')
+    else:
+        hint = ('Prepare a separate import copy without this object, using only ordinary '
+                'files and directories. Original files are not changed.')
+    message = ('Expected an ordinary ' + expected if kind in ('file', 'directory') else
+               label + ' are not supported by workspace imports')
+    fail('unsafe_path', message, path=path, entry_type=kind, hint=hint, path_scope='transfer_source')
+
+
+def reject_hardlinks(path):
+    fail('unsafe_path', 'Multiple hardlinks are not supported', path=path, entry_type='file', path_scope='transfer_source',
+         hint='Prepare a separate import copy with independent ordinary files instead of multiple hardlinks. Original files are not changed.')
+
+
+def open_child(parent, name, *, directory=False, path=None, transfer_source=False):
+    # Diagnostic context never changes the descriptor-relative lookup name.
+    # Only content callers opt in; private workspace checks keep generic errors.
+    path = name if path is None else path
     before = os.stat(name, dir_fd=parent, follow_symlinks=False)
     if not (stat.S_ISDIR(before.st_mode) if directory else stat.S_ISREG(before.st_mode)):
-        fail('unsafe_path', 'Expected an ordinary ' + ('directory' if directory else 'file'), path=name)
+        expected = 'directory' if directory else 'file'
+        if transfer_source:
+            reject_entry(before, path, expected)
+        fail('unsafe_path', 'Expected an ordinary ' + expected, path=path)
     if not directory and before.st_nlink != 1:
-        fail('unsafe_path', 'Multiple hardlinks are not supported', path=name)
+        if transfer_source:
+            reject_hardlinks(path)
+        fail('unsafe_path', 'Multiple hardlinks are not supported', path=path)
     fd = os.open(name, DIRECTORY_FLAGS if directory else FILE_FLAGS, dir_fd=parent)
     try:
         if snapshot(before) != snapshot(os.fstat(fd)):
-            fail('source_changed', 'Path identity changed while opening', path=name)
+            fail('source_changed', 'Path identity changed while opening', path=path)
         same_mount(parent, fd)
         return fd
     except BaseException:
@@ -181,7 +215,7 @@ def open_child(parent, name, *, directory=False):
         raise
 
 
-def open_relative(parent, path, *, directory=True):
+def open_relative(parent, path, *, directory=True, transfer_source=False):
     validate_path(path, root=True)
     fd = os.dup(parent)
     try:
@@ -189,7 +223,8 @@ def open_relative(parent, path, *, directory=True):
             return fd
         parts = path.split('/')
         for index, part in enumerate(parts):
-            child = open_child(fd, part, directory=directory or index < len(parts) - 1)
+            child = open_child(fd, part, directory=directory or index < len(parts) - 1,
+                               path='/'.join(parts[:index + 1]), transfer_source=transfer_source)
             os.close(fd)
             fd = child
         return fd
@@ -198,14 +233,15 @@ def open_relative(parent, path, *, directory=True):
         raise
 
 
-def assert_named(parent, name, fd):
+def assert_named(parent, name, fd, *, path=None):
+    path = name if path is None else path
     info = os.stat(name, dir_fd=parent, follow_symlinks=False)
     if (info.st_dev, info.st_ino) != (os.fstat(fd).st_dev, os.fstat(fd).st_ino):
-        fail('unsafe_path', 'A held path was replaced', path=name)
+        fail('unsafe_path', 'A held path was replaced', path=path)
     check = os.open(name, DIRECTORY_FLAGS if stat.S_ISDIR(info.st_mode) else FILE_FLAGS, dir_fd=parent)
     try:
         if identity(check) != identity(fd):
-            fail('unsafe_path', 'A held mount was replaced', path=name)
+            fail('unsafe_path', 'A held mount was replaced', path=path)
     finally:
         os.close(check)
 
@@ -261,12 +297,12 @@ def capture_fd(root):
     def visit(fd, path):
         before = os.fstat(fd)
         if mount_id(fd) != root_mount:
-            fail('unsafe_path', 'Nested mounts are not supported', path=path)
+            fail('unsafe_path', 'Nested mounts are not supported', path=path, path_scope='transfer_source')
         mode = stat.S_IMODE(before.st_mode)
         entry = {'path': path, 'type': 'directory', 'size': 0, 'mode': mode}
         if stat.S_ISREG(before.st_mode):
             if before.st_nlink != 1:
-                fail('unsafe_path', 'Multiple hardlinks are not supported', path=path)
+                reject_hardlinks(path)
             digest = hashlib.sha256()
             os.lseek(fd, 0, os.SEEK_SET)
             size = 0
@@ -282,14 +318,15 @@ def capture_fd(root):
                 child_path = name if path == '.' else path + '/' + name
                 validate_path(child_path)
                 info = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                child = open_child(fd, name, directory=stat.S_ISDIR(info.st_mode))
+                child = open_child(fd, name, directory=stat.S_ISDIR(info.st_mode), path=child_path,
+                                   transfer_source=True)
                 try:
                     visit(child, child_path)
-                    assert_named(fd, name, child)
+                    assert_named(fd, name, child, path=child_path)
                 finally:
                     os.close(child)
         else:
-            fail('unsafe_path', 'Only ordinary files and directories are supported', path=path)
+            reject_entry(before, path, 'file or directory')
         if snapshot(before) != snapshot(os.fstat(fd)):
             fail('source_changed', 'Content or metadata changed while reading', path=path)
         entries.append(entry)
@@ -323,7 +360,24 @@ def tar_header(name, mode, size=0, *, directory=False):
     try:
         return item.tobuf(format=tarfile.USTAR_FORMAT, encoding='utf-8', errors='strict')
     except (ValueError, UnicodeError) as error:
-        fail('unsupported_path', 'Path cannot be represented in USTAR: ' + str(error), path=name)
+        message = 'This entry cannot fit the import archive format (USTAR): ' + str(error)
+        if isinstance(error, UnicodeError):
+            hint = 'Use valid UTF-8 filenames in a separate import copy. Original files are not changed.'
+        elif str(error) == 'name is too long':
+            message += '. The format limits UTF-8 bytes and nested paths, not just visible characters.'
+            hint = ('Shorten the filename or nested folder names in a separate import copy. '
+                    'Renaming only the selected source folder does not shorten archive member paths.')
+        else:
+            hint = ('Prepare a separate import copy with file sizes and metadata supported by USTAR. '
+                    'Original files are not changed.')
+        fail('unsupported_path', message, path=name, hint=hint, path_scope='transfer_source')
+
+
+def validate_archive_headers(manifest):
+    """Preflight the writer's exact headers without scanning or writing source data."""
+    tar_header(MANIFEST_NAME, 0o600, len(canonical_bytes(manifest)))
+    for entry in manifest['entries']:
+        tar_header(entry['path'], entry['mode'], entry['size'], directory=entry['type'] == 'directory')
 
 
 def write_bytes(output, block):
@@ -348,7 +402,7 @@ def build_archive_fd(root, manifest, output):
     for entry in manifest['entries']:
         path, directory = entry['path'], entry['type'] == 'directory'
         write_bytes(output, tar_header(path, entry['mode'], entry['size'], directory=directory))
-        fd = open_relative(root, path, directory=directory)
+        fd = open_relative(root, path, directory=directory, transfer_source=True)
         try:
             if snapshot(os.fstat(fd)) != metadata[path]:
                 fail('source_changed', 'Source identity changed before archiving', path=path)
