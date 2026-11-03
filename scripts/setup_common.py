@@ -1,6 +1,5 @@
 """Small host adapter for saved native launches and locked workspace operations."""
 import csv
-import hashlib
 import io
 import json
 import os
@@ -415,7 +414,6 @@ class Docker:
             if not self.local_host:
                 raise SetupError('This Docker connection does not support guided setup of a local folder. Choose Docker-managed storage.', 'host_unsupported')
             source = storage['path']
-            # Qualified prepared roots must still satisfy protected-layout checks.
             from setup_host import validate_existing_root
             try:
                 validate_existing_root(source)

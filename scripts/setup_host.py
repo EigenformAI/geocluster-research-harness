@@ -150,12 +150,7 @@ def _command(plan):
 
 
 def host_root_plan(path) -> dict:
-    """Snapshot a target and captured helper before approval, holding safe ancestors.
-
-    Public fields are path, digest, source, command, and existing. The command's
-    parent identities are completed after approved missing parents are created.
-    Keep this object in memory, and close it when cancelling or replacing it.
-    """
+    """Keep this approval in memory and close it when cancelling or replacing it."""
     account = _account()
     code = _capture_source()
     helper = _validation_helper(code)

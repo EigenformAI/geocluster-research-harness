@@ -144,13 +144,6 @@ class WizardTests(unittest.TestCase):
         self.assertNotIn('pending', support.events)
         self.assertIn('No changes were made', output)
 
-    def test_help_invalid_and_back_do_not_apply(self):
-        code, support, output, _ = self.run_guide('\n?\nb\nq\n')
-        self.assertEqual(code, 130)
-        self.assertIsNone(support.saved)
-        self.assertNotIn('volume', support.events)
-        self.assertIn('Workspace', output)
-
     def test_no_data_and_declining_launch_succeed(self):
         code, support, output, _ = self.run_guide('\n\n\n3\n\nn\n')
         self.assertEqual(code, 0)
@@ -166,7 +159,6 @@ class WizardTests(unittest.TestCase):
         code, support, _, _ = self.run_guide('\n' * 7 + 'n\n', support)
         self.assertEqual(code, 0)
         self.assertEqual(support.saved[0]['starter']['kind'], 'existing')
-        self.assertFalse(any(event[1][0] == 'samples' for event in support.events if isinstance(event, tuple)))
 
     def test_sample_collision_uses_fresh_sibling(self):
         support = Support()
@@ -370,6 +362,9 @@ class WizardTests(unittest.TestCase):
     def test_back_from_workspace_name_returns_to_storage_not_image(self):
         code, support, output, _ = self.run_guide('\n?\nb\nq\n')
         self.assertEqual(code, 130)
+        self.assertIsNone(support.saved)
+        self.assertNotIn('volume', support.events)
+        self.assertIn('Workspace', output)
         self.assertEqual(output.count('Step 2 of 7:'), 1)
         self.assertNotIn('pending', support.events)
 

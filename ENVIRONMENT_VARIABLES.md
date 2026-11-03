@@ -257,8 +257,8 @@ upload or workspace to process those sources.
 `scripts/build-docker.sh`, which computes the bundle digest itself. Compose
 builds instead need `PREPROCESSING_BUILD_CONTEXT` (the capture's output directory)
 and `PREPROCESSING_BUNDLE_DIGEST` (the Docker build argument). The capture takes
-working-tree bytes; source Git revision alone does not identify them. The README
-pins the processor release tag and the digest it produces.
+working-tree bytes; source Git revision alone does not identify them.
+`scripts/preprocessing-release.json` records the processor revision and bundle digest.
 
 The full image still requires this processor bundle when runtime extraction is
 disabled. Use `scripts/build-docker.sh` to capture updated source and rebuild.

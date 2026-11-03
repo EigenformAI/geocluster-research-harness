@@ -72,7 +72,6 @@ class Wizard:
         self.stage = 1
 
     def say(self, text=''):
-        # Paths and command lines stay intact; explanatory prose wraps naturally.
         width = max(40, shutil.get_terminal_size((80, 24)).columns)
         for line in str(text).split('\n'):
             if line.startswith((' ', '\t')) or '://' in line or '/' in line or len(line) <= width:
@@ -180,15 +179,15 @@ class Wizard:
             raise self.error((result.stderr or result.stdout or f'{args[0]} failed').strip())
         return result.stdout.strip()
 
-    def public_guide(self, name):
+    def public_guide(self, path):
         try:
             revision = self.read_command(['git', '-C', str(self.repo), 'rev-parse', 'HEAD'])
         except self.support.SetupError:
             revision = 'main'
-        return PUBLIC + revision + '/docs/' + name
+        return PUBLIC + revision + '/' + path
 
-    def custom_guide(self):
-        return 'Custom installation guide: ' + self.public_guide('CUSTOM_INSTALLATION.md')
+    def manual_guide(self, section='build-the-image-manually'):
+        return 'Manual setup: ' + self.public_guide('README.md#' + section)
 
     def opening(self):
         self.say("Set up GeoCluster\n\nLet's get your first project ready. We'll prepare GeoCluster, choose a home\nfor your files, and help you start with sample data or your own work.\n\nKeep the recommended choices to try GeoCluster with Wattle Creek sample data.\nYou'll connect your model provider when GeoCluster opens.\n\nPress Enter for the recommended choice, ? for more options, b to go back,\nor q to leave setup.\n")
@@ -287,7 +286,7 @@ class Wizard:
     def build_help(self):
         image = self.plan.get('image') or {}
         source = self.build_source or self.source_cache()
-        self.say(f"GeoCluster's image build needs the pinned document processor source, even with extraction off.\nBuild source: {source}\nBuilds use the release validator; existing folders are never reset or cleaned.\nInstalled-image compatibility checks setup support, not release provenance.\nImage ID: {image.get('id', 'not selected')}\n" + (self.image_cause + '\n' if self.image_cause else '') + self.custom_guide())
+        self.say(f"GeoCluster's image build needs the pinned document processor source, even with extraction off.\nBuild source: {source}\nBuilds use the release validator; existing folders are never reset or cleaned.\nInstalled-image compatibility checks setup support, not release provenance.\nImage ID: {image.get('id', 'not selected')}\n" + (self.image_cause + '\n' if self.image_cause else '') + self.manual_guide())
 
     def image_options(self):
         self.build_help()
@@ -306,14 +305,13 @@ class Wizard:
 
     def build(self, source):
         self.check()
-        # Check unfamiliar harness work before downloading or building anything.
         submodules = self.read_command(['git', '-C', str(self.repo), 'submodule', 'status', '--recursive'])
         if any(line.startswith(('+', 'U')) for line in submodules.splitlines()):
-            raise self.error('Harness submodules differ from their pins. Keep local changes and use the custom-installation guide.\n' + self.custom_guide())
+            raise self.error('Harness submodules differ from their pins. Keep local changes and follow the manual build instructions.\n' + self.manual_guide())
         dirty = self.read_command(['git', '-C', str(self.repo), 'submodule', 'foreach', '--recursive', '--quiet',
                                    'git status --porcelain --untracked-files=all'])
         if dirty:
-            raise self.error('Harness submodules contain local changes. Keep those changes and use the custom-installation guide.\n' + self.custom_guide())
+            raise self.error('Harness submodules contain local changes. Keep those changes and follow the manual build instructions.\n' + self.manual_guide())
         source = Path(source)
         if not source.exists():
             self.say('Downloading build sources...')
@@ -343,7 +341,6 @@ class Wizard:
             env['TERM'] = 'dumb'
         args = ['bash', str(self.repo / 'scripts/build-docker.sh')]
         if os.environ.get('NO_COLOR') is not None or os.environ.get('TERM') == 'dumb':
-            # Also strip ANSI emitted by Docker or other build subprocesses.
             with subprocess.Popen(args, cwd=self.repo, env=env, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True, errors='replace') as process:
                 for line in process.stdout:
@@ -359,7 +356,7 @@ class Wizard:
         if choice is None:
             self.say('\nOther ways to prepare GeoCluster\n')
             choice = self.menu(['Build the current GeoCluster image', 'Use another installed image',
-                                'Choose an existing build-source folder'], help_text='Choose an installed compatible image, or use the pinned release source. ' + self.custom_guide(), help_action=self.build_sources)
+                                'Choose an existing build-source folder'], help_text='Choose an installed compatible image, or use the pinned release source. ' + self.manual_guide(), help_action=self.build_sources)
         if choice == 2:
             while True:
                 reference = self.ask('Image name or ID:', expected='an image name or ID', help_text='Use a locally installed Linux x64 image with setup protocol 1. Compatibility does not verify release provenance.')
@@ -374,19 +371,19 @@ class Wizard:
                     self.say(f"We couldn't use {reference} on this Docker host. Enter another image, or type b to choose a build.")
         if choice == 3:
             while True:
-                path = self.ask('Document processor source folder:', expected='a source folder', help_text='Choose a clean processor Git checkout matching scripts/preprocessing-release.json. ' + self.custom_guide())
+                path = self.ask('Document processor source folder:', expected='a source folder', help_text='Choose a clean processor Git checkout matching scripts/preprocessing-release.json. ' + self.manual_guide())
                 try:
                     self.build_source = self.validate_source(Path(path).expanduser())
                     return 'build'
                 except self.support.SetupError as exc:
                     self.say(f'This build needs the source version pinned by GeoCluster.\n{path}: {exc}\n')
                     self.check_builder()
-                    if self.confirm('Download the required source and build GeoCluster', help_text='The existing folder stays unchanged. ' + self.custom_guide()):
+                    if self.confirm('Download the required source and build GeoCluster', help_text='The existing folder stays unchanged. ' + self.manual_guide()):
                         self.build_source = self.source_plan()
                         return 'approved-build'
-                    choice = self.menu(['Choose another source folder', 'Development-build guide (manual setup)', 'Return to image choices'], help_text='Development builds use the explicit build script. ' + self.custom_guide())
+                    choice = self.menu(['Choose another source folder', 'Development-build guide (manual setup)', 'Return to image choices'], help_text='Development builds use the explicit build script. ' + self.manual_guide())
                     if choice == 2:
-                        self.say(self.custom_guide())
+                        self.say(self.manual_guide())
                     if choice in (2, 3):
                         return 'alternatives'
         if self.build_source is None:
@@ -505,11 +502,11 @@ class Wizard:
                 return
             if not self.docker.local_host:
                 self.say("This Docker connection doesn't support guided setup of a local folder.\nDocker-managed storage works here.\n")
-                if self.confirm('Use Docker-managed storage', help_text='Guided host folders need a local rootful Linux daemon on the default Unix socket, without Desktop or user namespace remapping. ' + self.custom_guide()):
+                if self.confirm('Use Docker-managed storage', help_text='Guided host folders need a local rootful Linux daemon on the default Unix socket, without Desktop or user namespace remapping. ' + self.manual_guide('use-a-dedicated-host-folder')):
                     self.plan['storage'] = {'kind': 'volume', 'name': VOLUME}
                     self.say(f'Workspace: {VOLUME}')
                     return
-                self.say(self.custom_guide())
+                self.say(self.manual_guide('use-a-dedicated-host-folder'))
                 continue
             base = self.support.allowed_host_base()
             suggested = storage.get('path', str(base / 'default'))
@@ -609,7 +606,6 @@ class Wizard:
             except (OSError, ValueError) as exc:
                 self.say(f"We couldn't copy {source}: {exc}.\nChoose another source folder, or type b to return to starting files.")
                 continue
-            # Config and plugin detection is advisory, never a deny-list.
             entries = manifest.get('entries', []) if isinstance(manifest, dict) else manifest
             paths = [entry.get('path', '') if isinstance(entry, dict) else str(entry) for entry in entries]
             if any(any(part in ('.opencode', '.claude', 'opencode.json', 'opencode.jsonc', 'plugins', 'plugin') for part in Path(path).parts) for path in paths):
@@ -871,7 +867,7 @@ class Wizard:
                 if getattr(exc, 'code', '').replace('-', '_') in ('identity', 'docker_changed'):
                     raise
                 self.say("We couldn't get administrator access to create this folder.\nDocker-managed storage is another way to get started.\n")
-                if self.confirm('Use Docker-managed storage instead', help_text=str(exc) + '\n' + self.custom_guide()):
+                if self.confirm('Use Docker-managed storage instead', help_text=str(exc) + '\n' + self.manual_guide('use-a-dedicated-host-folder')):
                     self.plan['storage'] = {'kind': 'volume', 'name': VOLUME}
                     self.host_plan = None
                     self.plan['operation'] = None
@@ -879,7 +875,7 @@ class Wizard:
                     self.inspect()
                     self.active = None
                     return 6
-                choice = self.menu(['Try creating the folder again', 'Choose where files are kept'], help_text=self.custom_guide())
+                choice = self.menu(['Try creating the folder again', 'Choose where files are kept'], help_text=self.manual_guide('use-a-dedicated-host-folder'))
                 self.active = None
                 return 6 if choice == 1 else 3
         while not self.prepared:
@@ -994,7 +990,7 @@ class Wizard:
         text = f"GeoCluster project: {self.plan['project']}\nWorkspace: {self.storage_description()}\n{self.outcome()}\n\n{self.first_use()}"
         if self.sample_verified:
             text += '\nFor the sample check, look for WC141: it has assay intervals but no collar.\n'
-        text += f'\nReturn to this project\n\nFrom {self.repo}:\n  ./scripts/tui.sh\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n\nChange saved choices:\n  ./scripts/setup.sh\n\nFinish pending work, then run /exit to close GeoCluster.\nKeep this workspace to continue with your files, conversations, and connections.\n\nResults: runs/<session-id>/results/ in the project.\nAnswers list created files. Review them before sharing.\n\nBefore either transfer, run /exit inside GeoCluster.\n\nExport: stop other project editors, then run in your normal terminal:\n  ./scripts/project-files.sh export\nChoose a project folder and output location when prompted.\n\nImport, from your normal terminal:\n  ./scripts/project-files.sh import\nChoose source and destination folders when prompted. Originals stay unchanged.\n\nDocument extraction\n\nGeoCluster can read text already present in PDF files.\nTo extract text from scanned pages, follow the document-processing guide:\n  {self.public_guide("NATIVE_DOCUMENT_PROCESSING.md")}\n\nProvider login\n\nNo callback ports are published. Use a supported API-key or device-code\nconnection method; browser logins that require a callback may need custom setup.\n'
+        text += f'\nReturn to this project\n\nFrom {self.repo}:\n  ./scripts/tui.sh\n\nEquivalent explicit launch command:\n  {self.explicit_command()}\n\nChange saved choices:\n  ./scripts/setup.sh\n\nFinish pending work, then run /exit to close GeoCluster.\nKeep this workspace to continue with your files, conversations, and connections.\n\nResults: runs/<session-id>/results/ in the project.\nAnswers list created files. Review them before sharing.\n\nBefore either transfer, run /exit inside GeoCluster.\n\nExport: stop other project editors, then run in your normal terminal:\n  ./scripts/project-files.sh export\nChoose a project folder and output location when prompted.\n\nImport, from your normal terminal:\n  ./scripts/project-files.sh import\nChoose source and destination folders when prompted. Originals stay unchanged.\n\nDocument extraction\n\nGeoCluster can read text already present in PDF files.\nTo extract text from scanned pages, follow the document-processing guide:\n  {self.public_guide("docs/NATIVE_DOCUMENT_PROCESSING.md")}\n\nProvider login\n\nNo callback ports are published. Use a supported API-key or device-code\nconnection method; browser logins that require a callback may need custom setup.\n'
         return text
 
     def finish(self):

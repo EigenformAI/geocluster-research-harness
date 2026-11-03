@@ -79,10 +79,8 @@ To open the saved project again, run this command without options:
 ./scripts/tui.sh
 ```
 
-Each checkout saves its image, Docker connection, workspace, and project in
-`.geocluster/setup.json`. The first-use guide is `.geocluster/next-steps.txt`.
-These files contain no provider credentials. Git and image builds exclude
-`.geocluster/`.
+Setup saves these choices for this checkout. Find the launch command and
+first-use instructions in `.geocluster/next-steps.txt`.
 
 To change the saved choices, run `./scripts/setup.sh` again. For custom launch
 options, use the [explicit launcher](#use-the-explicit-launcher).
@@ -216,6 +214,8 @@ To copy results from the saved project to your computer:
 
 Exports create a new destination without replacing existing files. They copy
 ordinary project content, not provider connections or private runtime state.
+Transfers reject links and mounted subtrees. They are not permission-preserving
+backups.
 Imports and exports require exclusive access to the workspace. Run
 `./scripts/project-files.sh --help` for explicit storage and project options.
 
@@ -242,12 +242,62 @@ job tracking, and recovery.
 
 ### Use the explicit launcher
 
+```sh
+./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
+	--workspace-volume geocluster-native-workspace --project default
+```
+
 Run `./scripts/run-runtime-tui.sh --help` for custom workspace, provider-environment,
 and processing-model options. This launcher does not read saved setup choices.
 Reuse the same workspace and project options on every explicit launch.
 
-Follow [custom installation](docs/CUSTOM_INSTALLATION.md) for manual release and
-development builds, host-folder preparation, and explicit file transfers.
+#### Use a dedicated host folder
+
+Use local rootful Linux Docker. Choose a new dedicated folder outside the
+checkout, not your home directory or an existing data folder. Run the preparation
+commands only if the workspace does not already exist. Do not change ownership
+of an existing workspace to make startup pass.
+
+```sh
+workspace="$HOME/.local/share/geocluster/workspaces/manual"
+mkdir -p "$(dirname "$workspace")"
+sudo install -d -o root -g root -m 0755 "$workspace"
+./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
+	--workspace-root "$workspace" --project default
+```
+
+Project files become container-owned. Host edits can need administrator access.
+For Desktop, rootless, or remote Docker, prefer Docker-managed storage.
+A bind path refers to the Docker host.
+
+### Build the image manually
+
+Run these commands from the harness checkout. Install Docker Buildx first.
+The image needs the document processor source even when extraction is disabled.
+Choose a new processor folder. Keep existing checkouts with local changes.
+
+```sh
+git submodule update --init --recursive
+git clone --no-checkout \
+	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git \
+	../geocluster-processor-release
+git -C ../geocluster-processor-release checkout --detach \
+	"$(python3 -c 'import json; print(json.load(open("scripts/preprocessing-release.json"))["sourceRevision"])')"
+git -C ../geocluster-processor-release submodule update --init --recursive
+PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-processor-release && pwd)" \
+	bash scripts/build-docker.sh
+```
+
+Release builds require the pinned source without local changes. To build with
+processor changes instead, use:
+
+```sh
+PREPROCESSING_BUILD_MODE=development \
+	PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-processor-release && pwd)" \
+	IMAGE_TAG=local bash scripts/build-docker.sh
+```
+
+Use `geocluster-runtime:local` for that development image.
 
 ## Protect your workspace
 
@@ -306,7 +356,7 @@ services. Finish pending work before you exit or rebuild.
    your existing workspace and project.
 5. Open the saved project with `./scripts/tui.sh`.
 
-For manual builds, follow [custom installation](docs/CUSTOM_INSTALLATION.md).
+For manual builds, follow [Build the image manually](#build-the-image-manually).
 Keep modified processor checkouts instead of replacing them. After a rebuild,
 run setup to select the new image. Saved launch uses the previously selected
 immutable image ID, not a tag that may have moved. For document processing,
