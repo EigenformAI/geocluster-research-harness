@@ -93,8 +93,7 @@ options, use the [explicit launcher](#use-the-explicit-launcher).
 
 3. Choose the source folder and a new folder name inside the project when prompted.
 
-The command copies your data into a new folder in the saved project. Your
-originals stay where they are. For private source files, it asks you to give
+The command __copies__ your data into a new folder in the saved project (original files are untouched). For private source files, it asks you to give
 GeoCluster's tools access to the project copy.
 
 Copy complete data folders to preserve linked files. For example, a shapefile
