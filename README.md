@@ -24,28 +24,24 @@ Ask the agent to:
 To inspect the tool calls and scripts behind an answer,
 [read what each specialist did](#read-what-each-specialist-did).
 
-The geology prompts require source citations for data-derived claims and separate
-measurements from interpretation. These are agent instructions, not a guarantee
-of correctness. Review the cited evidence before using a result.
+The geology agents are instructed to cite sources for data-derived claims and
+distinguish measurements from interpretation. Follow the citations to review
+the findings.
 
 ## Before you start
 
 You need:
 
-- A running Linux x64 Docker environment. ARM execution and cross-building are
-  not supported. Install Buildx if you need to build the image.
+- A running Linux x64 Docker environment, with Buildx for image builds.
 - Bash, Git, Python 3, and an interactive terminal.
-- Your own model-provider account or API key supported by OpenCode. Connect it
-  inside the TUI.
+- A model-provider account or API key supported by OpenCode.
 
-You do not need a GeoCluster account, backend token, or `.env` file. You do not
-need to install OpenCode on your host. Your provider handles model requests and
-charges for usage under its own pricing.
+OpenCode runs inside the Docker image. Connect your provider when GeoCluster
+opens. Model usage follows that provider's pricing.
 
 ## Set up a project
 
-1. Clone this repository. Use Git, not GitHub's Download ZIP option: a ZIP does
-    not include the `geocluster-mcp` submodule that the build needs.
+1. Clone the repository and its geology tools:
 
 	```sh
 	git clone --recurse-submodules https://github.com/EigenformAI/geocluster-research-harness.git
@@ -63,13 +59,14 @@ charges for usage under its own pricing.
 	./scripts/setup.sh
 	```
 
-Press Enter to keep the recommended choices: prepare GeoCluster, use
-Docker-managed storage, and add Wattle Creek samples to project `default`.
-Setup downloads the pinned document processor source when a build is needed.
-You can choose an installed image, copy your own data folder, or add files later.
-An existing project defaults to keeping its files without adding anything.
+For a first try, press Enter through the recommended choices. The guide prepares
+GeoCluster and sets up project `default` in Docker-managed storage with Wattle
+Creek samples.
 
-Setup offers to open the TUI when the project is ready. Follow
+You can also copy your own data folder or add files later. Use `?` to explore
+image and storage options. Returning to an existing project continues with its files.
+
+When your project is ready, open GeoCluster from the guide. Follow
 [Ask about the folder](#ask-about-the-folder) to connect your provider and try a
 first question.
 
@@ -96,46 +93,38 @@ options, use the [explicit launcher](#use-the-explicit-launcher).
 
 3. Choose the source folder and a new folder name inside the project when prompted.
 
-The command copies your folder into the saved project. Your originals stay
-unchanged. Imports create a new folder inside the project. They do not merge with
-or replace an existing folder. If source files are private to your account, the
-command asks before giving GeoCluster's tools access to the copy.
+The command copies your data into a new folder in the saved project. Your
+originals stay where they are. For private source files, it asks you to give
+GeoCluster's tools access to the project copy.
 
 Copy complete data folders to preserve linked files. For example, a shapefile
 needs its `.shx`, `.dbf`, and `.prj` files, and drillhole assays need collars and
 surveys for spatial analysis. Name a folder in your question to have the agent
 inspect its files.
 
-Project data lives at `/workspace/<PROJECT_ID>/` in the container. A workspace
-also keeps private provider connections and conversation history outside the
-project. With remote Docker, the workspace lives on the Docker host. The transfer
-command copies files from your client without a remote bind mount.
+Project files live at `/workspace/<PROJECT_ID>/` inside GeoCluster. The workspace
+also keeps conversations and provider connections separately from project files.
+With remote Docker, imports transfer your data to that Docker host.
 
-For a host folder, setup supports local rootful Linux Docker and uses
-administrator access to create a dedicated workspace. The project becomes
-container-owned. Some host edits need administrator access. This option does not
-enable automatic permission sharing.
-
-The launcher mounts the workspace, not your home directory or unrelated host
-folders. Agent code is not confined to the project folder. See
-[Protect your workspace](#protect-your-workspace).
+For direct access to files on your computer,
+[use a dedicated host folder](#use-a-dedicated-host-folder). See
+[Protect your workspace](#protect-your-workspace) for access and credential handling.
 
 ## Ask about the folder
 
-1. Run `/connect` in the TUI to connect your provider. No GeoCluster account or
-   token is needed. The connection persists in this workspace.
+1. Run `/connect` inside GeoCluster to connect your provider. Your connection is
+   saved in this workspace.
 
-2. Run `/models` to select a model. Startup does not perform paid inference.
+2. Run `/models` to choose a model.
 
 3. If you selected the samples, ask this question. Use the sample folder name
    shown by setup if you chose a name other than `wattle-creek`.
 
-   > Check wattle-creek/drilling/assays.csv against wattle-creek/drilling/collars.csv
-   > by hole_id. Save unmatched intervals and a QA report. Preserve reported values
-   > and do not invent collars.
+   > Compare wattle-creek/drilling/assays.csv with wattle-creek/drilling/collars.csv
+   > using hole_id. Save assay rows with no matching collar and a short data-quality
+   > report. Keep the input files unchanged.
 
-   The answer should report hole `WC141`, which has assay intervals but no
-   collar.
+   Look for `WC141` in the results: it has assay intervals but no matching collar.
 
 4. Find the saved files in the paths that the answer lists. Each conversation
    saves its outputs under `runs/<session-id>/results/` in the project folder.
@@ -160,8 +149,8 @@ For your own data, replace the filenames in these examples:
 The Geology agent delegates dataset work to an orchestrator. The orchestrator
 assigns tasks to DataOps, Transform, Analytics, GeoViz, and Voxel. It calls Extended
 when a task needs additional capabilities, such as package installation.
-Each specialist works in its own session. Review those sessions before you share
-a result.
+Each specialist works in its own session. Open a session to inspect its tool
+calls and scripts.
 
 1. Click a line such as `Orchestrator Subagent — Check drilling inputs` in the
    transcript. You can also press `↓` with the cursor at the end of the prompt to
@@ -194,10 +183,9 @@ these files under `runs/<session-id>/results/share/`:
 - A `figures/` folder with PNG and SVG copies of each figure.
 - `brief.md`, the source for the PDF, Word, and PowerPoint files.
 
-The instructions also require source footnotes, axis units, colour-blind-safe
-palettes, image alt text, and speaker notes for findings. These are agent
-instructions, not checks enforced on every export. Confirm that the requested
-files exist, and review their content and layout before you send them.
+Before sharing the pack, check the file list, content, and layout. Look for source
+footnotes, axis units, colour-blind-safe palettes, image alt text, and speaker
+notes for findings.
 
 To copy results from the saved project to your computer:
 
@@ -306,6 +294,9 @@ connections. Native engine state is outside the project directory with mode
 `0700`. Whole-workspace backups can contain provider credentials and refresh
 tokens. Protect those backups like credentials.
 
+The launcher mounts the workspace rather than your home directory or unrelated
+host folders. Agent code is not confined to the active project folder.
+
 Open only projects whose configuration and plugins you trust. Both can execute
 code as the engine's Unix user. Shell tools running as that user can access its
 credentials. Agent tool permissions guide delegation. They do not sandbox code
@@ -323,8 +314,8 @@ Sessions and credentials do not transfer with project files.
 In a local Docker installation, the runtime, workspace, and bundled analysis tools
 run on your Docker host. Model requests go to the provider you connect. They can
 include prompts, file content, and tool results. Agent tools can also make network
-requests. Running the container locally does not make inference offline or prevent
-data disclosure. Choose a provider and deployment appropriate for your data.
+requests. Choose your model provider and deployment to match your data's privacy
+requirements.
 
 ## Continue or stop
 
@@ -334,9 +325,8 @@ To continue with the saved project, run:
 ./scripts/tui.sh
 ```
 
-If the saved image, project, or Docker connection is unavailable, run
-`./scripts/setup.sh` to choose the destination again. Saved launch does not
-create a replacement project or follow a changed image tag.
+To choose another image, project, or Docker connection, run `./scripts/setup.sh`
+again.
 
 To stop, run `/exit` in the TUI. Exiting shuts down its local runtime and owned
 services. Finish pending work before you exit or rebuild.
