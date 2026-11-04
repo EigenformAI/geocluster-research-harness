@@ -109,6 +109,38 @@ else:
     def test_free_name_does_not_merge_existing_destinations(self):
         self.assertEqual(files.fresh_name('samples', ['samples', 'samples-2']), 'samples-3')
 
+    def test_export_picker_preserves_unicode_numeric_and_ordinary_exact_paths(self):
+        for path in ('²', '١', 'folder name²', 'survey ünicode/sub folder'):
+            with self.subTest(path=path):
+                docker = Mock()
+                docker.operation.return_value = {'paths': ['samples', path]}
+                with patch.object(files, 'prompt', side_effect=[path]):
+                    self.assertEqual(files.choose_export(docker, {}, 'default', 'image'), path)
+
+    def test_export_picker_accepts_numbered_choices(self):
+        for answer, expected in (('1', 'samples'), ('2', 'results'), ('02', 'results')):
+            with self.subTest(answer=answer):
+                docker = Mock()
+                docker.operation.return_value = {'paths': ['samples', 'results']}
+                with patch.object(files, 'prompt', side_effect=[answer]):
+                    self.assertEqual(files.choose_export(docker, {}, 'default', 'image'), expected)
+
+    def test_export_picker_reprompts_for_out_of_range_and_oversized_numbers(self):
+        docker = Mock()
+        docker.operation.return_value = {'paths': ['samples', 'results']}
+        with patch.object(files, 'prompt', side_effect=['0', '3', '9' * 5000, '2']):
+            self.assertEqual(files.choose_export(docker, {}, 'default', 'image'), 'results')
+
+    def test_export_picker_selects_number_from_next_page(self):
+        pages = {
+            0: {'paths': ['samples', 'results'], 'hasMore': True},
+            2: {'paths': ['later data', 'last folder']},
+        }
+        docker = Mock()
+        docker.operation.side_effect = lambda storage, image, args: pages[int(args[args.index('--offset') + 1])]
+        with patch.object(files, 'prompt', side_effect=['n', '2']):
+            self.assertEqual(files.choose_export(docker, {}, 'default', 'image'), 'last folder')
+
     def test_reviewed_manifest_is_reused_not_silently_recaptured(self):
         from setup_common import import_source, prepare_import
         with tempfile.TemporaryDirectory() as directory:

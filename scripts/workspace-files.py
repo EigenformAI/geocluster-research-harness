@@ -142,9 +142,13 @@ def choose_export(docker, storage, project, image_id):
         if answer == 'n' and more:
             offset += len(paths)
             continue
-        if answer.isdigit() and 1 <= int(answer) <= len(paths):
-            return paths[int(answer) - 1]
-        if answer.isdigit():
+        if answer.isascii() and answer.isdigit():
+            try:
+                index = int(answer) - 1
+            except ValueError:
+                index = -1
+            if 0 <= index < len(paths):
+                return paths[index]
             print('Enter one of the displayed numbers or an exact workspace-relative path.')
             continue
         return answer
