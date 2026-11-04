@@ -86,7 +86,7 @@ def parse_json(raw):
     try:
         return json.loads(raw, object_pairs_hook=_object,
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError('non-finite JSON')))
-    except (ValueError, UnicodeError) as error:
+    except (ValueError, UnicodeError, RecursionError) as error:
         raise SetupError('Could not read valid JSON settings or Docker metadata.') from error
 
 

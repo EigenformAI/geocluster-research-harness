@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,55 @@ class CommonTests(unittest.TestCase):
                 (Path(directory) / 'setup.json').write_text('{"version":1,"version":1}')
                 with self.assertRaises(common.SetupError):
                     common.load_profile()
+
+    def test_json_parser_handles_deep_nesting_as_invalid_settings(self):
+        nested = b'[' * 64 + b'0' + b']' * 64
+        value = common.parse_json(nested)
+        for _ in range(64):
+            value = value[0]
+        self.assertEqual(value, 0)
+        for raw in (b'[' * 32767 + b'0' + b']' * 32767,
+                    b'{"version":2,"version":2}', b'NaN', b'Infinity', b'-Infinity', b'"\xff"'):
+            with self.subTest(raw_length=len(raw)):
+                with self.assertRaisesRegex(common.SetupError, 'Could not read valid JSON settings or Docker metadata'):
+                    common.parse_json(raw)
+        with self.assertRaisesRegex(common.SetupError, 'exceed the supported size'):
+            common.parse_json(b' ' * 65536 + b'0')
+
+    def test_saved_client_reports_deeply_nested_settings_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            for name in ('scripts/tui.sh', 'scripts/setup-client.py', 'scripts/setup_common.py',
+                         'runtime/setup_transfer.py'):
+                target = repo / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(common.REPO / name, target)
+            state = repo / '.geocluster'
+            state.mkdir(mode=0o700)
+            record = state / 'setup.json'
+            raw = b'[' * 32767 + b'0' + b']' * 32767
+            record.write_bytes(raw)
+            record.chmod(0o600)
+            env = {'PATH': str(Path(sys.executable).parent) + os.pathsep + os.defpath}
+            result = subprocess.run(['bash', str(repo / 'scripts/tui.sh')],
+                                    capture_output=True, text=True, timeout=10, env=env)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(result.stdout, '')
+            self.assertEqual(result.stderr, 'Could not read valid JSON settings or Docker metadata.\n')
+            self.assertEqual(record.read_bytes(), raw)
+
+            profile = {'version': 2, 'image': {'reference': 'runtime:test',
+                'id': 'sha256:' + 'a' * 64, 'created': 'today'},
+                'docker': {'fingerprint': 'b' * 64, 'label': 'local Linux Docker'},
+                'storage': {'kind': 'volume', 'name': 'a-workspace'},
+                'project': 'default', 'operation': None,
+                'starter': {'kind': 'none', 'destination': None}}
+            record.write_text(json.dumps(profile))
+            result = subprocess.run(['bash', str(repo / 'scripts/tui.sh'), '--help'],
+                                    capture_output=True, text=True, timeout=10, env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Explicit saved launch:', result.stdout)
+            self.assertEqual(result.stderr, '')
 
     def test_pending_excludes_source_paths(self):
         with tempfile.TemporaryDirectory() as directory:
