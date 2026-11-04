@@ -215,7 +215,7 @@ def _load(name, pending=False):
         return None
     try:
         try:
-            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
         except FileNotFoundError:
             return None
         with os.fdopen(fd, 'rb') as stream:

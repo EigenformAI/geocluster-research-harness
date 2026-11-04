@@ -346,6 +346,44 @@ class CommonTests(unittest.TestCase):
                     common.load_profile()
             self.assertEqual(state.stat().st_mode & 0o777, 0o755)
 
+    def test_fifo_settings_are_rejected_without_blocking_or_mutation(self):
+        script = '''
+import sys
+from pathlib import Path
+import setup_common as common
+common.STATE = Path(sys.argv[1])
+try:
+    getattr(common, sys.argv[2])()
+except common.SetupError as error:
+    print(error.code, file=sys.stderr)
+    print(error, file=sys.stderr)
+    sys.exit(1)
+'''
+        for name, loader in (('setup.json', 'load_profile'), ('pending.json', 'load_pending')):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                state = Path(directory, '.geocluster')
+                state.mkdir(mode=0o700)
+                record = state / name
+                os.mkfifo(record, 0o600)
+                record.chmod(0o600)
+                before = record.lstat()
+                try:
+                    result = subprocess.run([sys.executable, '-c', script, str(state), loader],
+                                            cwd=Path(__file__).parent, capture_output=True,
+                                            text=True, timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.fail(f'{loader} blocked on a FIFO settings entry for 2 seconds')
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn('unsafe_state', result.stderr)
+                self.assertIn(str(record), result.stderr)
+                self.assertIn('ordinary file', result.stderr)
+                self.assertIn('mode 0600', result.stderr)
+                self.assertIn('ls -ld --', result.stderr)
+                self.assertIn('mv -T -n --', result.stderr)
+                self.assertIn('./scripts/setup.sh', result.stderr)
+                self.assertEqual(record.lstat(), before)
+                self.assertEqual(list(state.iterdir()), [record])
+
     def test_failed_first_profile_does_not_leave_an_orphan_guide(self):
         with tempfile.TemporaryDirectory() as directory:
             profile = {'version': 2, 'image': {'reference': 'runtime:test',
