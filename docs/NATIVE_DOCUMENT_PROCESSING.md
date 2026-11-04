@@ -17,8 +17,8 @@ conversation model. Connections persist in this retained container workspace.
 Host OpenCode accounts are not imported automatically.
 
 For a custom processing provider, put its declaration in ordinary native user
-configuration. A declaration present only in the conversation's project is not
-automatically copied into the extraction context. The writable native XDG config
+configuration. A declaration present only in a data folder is not automatically
+copied into the extraction context. The writable native XDG config
 root is `/workspace/.runtime/native/opencode/config`.
 
 ## Enable processing
@@ -48,10 +48,11 @@ Without `--processing-model`, the launcher does not start the processor.
 
 ## Submit and inspect a document
 
-Place the source in the project directory, as you would for other native file
-analysis. Then ask:
+Place the source in a workspace data folder, as you would for other native file
+analysis. With the default Docker volume, import local files using
+`./scripts/workspace-files.sh import`. Then ask:
 
-> Process survey.pdf as a retained extraction job. Show its progress, then read
+> Process reports/survey.pdf as a retained extraction job. Show its progress, then read
 > the extracted text and tables. Identify incomplete coverage and cite the source
 > pages.
 
@@ -93,10 +94,10 @@ returned source pages and retained content before using a report.
 ## Process a document without chat
 
 Keep the processing-enabled TUI running. In another terminal, select the same
-workspace and project options used by the launcher:
+workspace options used by the launcher:
 
 ```sh
-./scripts/process-document.sh submit survey.pdf --wait
+./scripts/process-document.sh submit reports/survey.pdf --wait
 ./scripts/process-document.sh list
 ./scripts/process-document.sh status --request REQUEST_ID
 ./scripts/process-document.sh wait --job JOB_ID --timeout 300
@@ -107,10 +108,11 @@ workspace and project options used by the launcher:
 
 The wrapper attaches to exactly one matching running container. It never starts
 a container, selects a model, connects an account, or opens processor storage.
-For a nondefault workspace, put `--workspace-root DIRECTORY` or
-`--workspace-volume NAME`, then `--project ID`, before the command. Add
-`--container ID` to disambiguate matching containers. Source and output paths are
-relative to the selected container's project directory, not your host shell.
+For another workspace, put `--workspace-root DIRECTORY` or
+`--workspace-volume NAME` before the command. Add `--container ID` if more than one
+container matches. Source and output paths are relative to `/workspace/default/`
+inside GeoCluster, not your host shell. For example, use `reports/survey.pdf` for
+a file in the `reports/` folder.
 
 Result summaries retain quality fields and provide inventory pagination. Use
 `--full-manifest` for the unpaged manifest. Bridge JSON responses have a 2 MiB
@@ -163,7 +165,7 @@ recovery needs inspection of private lifecycle logs and retained ownership state
 Do not delete unresolved state to make startup pass. Local cancellation does not
 prove supplier-side cancellation, deletion, refunds, or zero charges.
 
-The ordinary session picker defaults to the current project. **All projects** can
+The ordinary session picker defaults to the workspace. **All projects** can
 show live or unsettled extraction sessions for deliberate inspection.
 
 ## Use another compatible extraction engine
@@ -190,7 +192,8 @@ can remain blocked until the previous work is reconciled.
 ## Protect retained state
 
 Native processing state is under
-`/workspace/.runtime/native/processing/<PROJECT_ID>/`. Keep the retained volume to
+`/workspace/.runtime/native/processing/default/`, alongside ordinary content at
+`/workspace/default/`. Keep the retained volume to
 preserve jobs and results. Provision enough disk space. Results remain for the
 data-root lifetime. This integration does not automatically evict old results.
 

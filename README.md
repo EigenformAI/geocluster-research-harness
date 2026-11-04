@@ -1,253 +1,151 @@
 # GeoCluster Research Harness
 
-Exploration geoscience runs on messy tabular and spatial data: assay tables with
-detection limits, well logs, magnetic surveys, NI 43-101 reports. GeoCluster
-Research Harness brings a geology-specialized research agent and a bundled
-geological MCP server into one Docker image. Add your data to a project folder
-and ask it to inspect, clean, cluster, rank anomalies, or answer questions grounded
-in your documents.
+GeoCluster Research Harness combines a geology research agent and geoscience
+analysis tools in one Docker image. Use it to work with assay tables, drillhole
+data, spatial surveys, and technical reports.
 
-Built on [OpenCode](https://opencode.ai) and
-[geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp). This open-source
-release runs through the OpenCode terminal user interface (TUI), with your own
-model provider. Keep input files and saved results together in a project
-workspace you control.
+The harness uses [OpenCode](https://opencode.ai) and
+[geocluster-mcp](https://github.com/EigenformAI/geocluster-mcp). You interact through
+the OpenCode terminal user interface (TUI) with your own model provider. Input
+files and saved results stay in a workspace you control. Model requests
+can include your data. See [Data privacy](#data-privacy).
 
 ## What you can do
 
-- Inspect and clean assay tables, check missing values, and compare drillhole
-  inputs without silently treating below-detection values as zero.
-- Cluster geochemical data, rank anomalies, and save tables and plots for review.
-- Ask questions about technical reports, including NI 43-101 reports, with
-  page-labelled PDF text. Optional document processing extracts retained tables
-  and other report content for further analysis.
-- Turn findings into a PDF, Word, PowerPoint, and Excel pack for people who will
-  not open the data. See [Share results](#share-results).
-- Open the session of any specialist the agent used, and read the tool calls and
-  scripts behind each number. See
-  [Read what each specialist did](#read-what-each-specialist-did).
+Ask the agent to:
 
-The geology prompts require source citations for data-derived claims and separate
-measurements from interpretation. These are agent instructions, not a guarantee
-of correctness. Review the cited evidence before using a result.
+- Inspect and clean assay tables, check missing values, and compare drillhole
+  inputs while preserving below-detection values.
+- Cluster geochemical data, rank anomalies, and save tables and plots for review.
+- Summarize technical reports, including NI 43-101 reports, and cite PDF pages.
+- Turn findings into a brief with PDF, Word, PowerPoint, and Excel files. See
+  [Share results](#share-results).
+
+To inspect the tool calls and scripts behind an answer,
+[read what each specialist did](#read-what-each-specialist-did).
+
+The geology agents are instructed to cite sources for data-derived claims and
+distinguish measurements from interpretation. Follow the citations to review
+the findings.
 
 ## Before you start
 
 You need:
 
-- Docker running, with Buildx installed.
-- Git, Python 3, and an interactive terminal.
-- A provider account or API key supported by OpenCode. Connect it inside the TUI.
-- A checkout of the
-  [document processor](https://github.com/EigenformAI/geocluster-data-preprocessing-service).
-  The image build requires it even if you do not use document processing.
+- A running Linux x64 Docker environment, with Buildx for image builds.
+- Bash, Git, Python 3, and an interactive terminal.
+- A model-provider account or API key supported by OpenCode.
 
-The container targets Linux x64. You do not need to install OpenCode on your host.
+OpenCode runs inside the Docker image. Connect your provider when GeoCluster
+opens. Model usage follows that provider's pricing.
 
-## Build the image
+## Set up a workspace
 
-1. Clone this repository. Use Git, not GitHub's Download ZIP option: a ZIP does
-   not include the `geocluster-mcp` submodule that the build needs.
+1. Clone the repository and its geology tools:
 
-   ```sh
-   git clone https://github.com/EigenformAI/geocluster-research-harness.git
-   ```
+	```sh
+	git clone --recurse-submodules https://github.com/EigenformAI/geocluster-research-harness.git
+	```
 
-2. Clone the document processor at the release this harness pins:
-   `preprocessing-ee7fcb6`, commit `ee7fcb6fef213a7febdfadb91bc605c49b0b1a53`.
-   It is a published prerelease, not a general production release or a claim
-   that every document extracts completely.
+2. Change into the harness checkout. Run every later command from here.
 
-   ```sh
-   git clone --depth 1 --branch preprocessing-ee7fcb6 \
-   	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git
-   ```
+	```sh
+	cd geocluster-research-harness
+	```
 
-3. Change into the harness checkout. Run every later command from here.
+3. Start the setup guide.
 
-   ```sh
-   cd geocluster-research-harness
-   ```
+	```sh
+	./scripts/setup.sh
+	```
 
-4. Fetch the `geocluster-mcp` submodule. It holds the geology tools that the
-   agents call.
+For a first try, press Enter through the recommended choices. The guide prepares
+GeoCluster and sets up a workspace in Docker-managed storage with Wattle Creek
+sample data.
 
-   ```sh
-   git submodule update --init --recursive
-   ```
+You can also copy your own data folder or add files later. Use `?` to explore
+image and storage options. Returning to an existing workspace continues with its files.
 
-5. Build the image. `PREPROCESSING_SOURCE_DIR` points the build at the processor
-   checkout from step 2. The image is named `geocluster-runtime:latest`.
+When your workspace is ready, open GeoCluster from the guide. Follow
+[Ask about the folder](#ask-about-the-folder) to connect your provider and try a
+first question.
 
-   ```sh
-   PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
-   	bash scripts/build-docker.sh
-   ```
-
-   The build checks the processor checkout against the commit and bundle
-   SHA-256 in `scripts/preprocessing-release.json`. A different commit, a dirty
-   checkout, or a bundle mismatch stops the build before Docker starts. The
-   check confirms which processor source the image contains. It does not test
-   extraction quality, and the build does not publish the image.
-
-To build with uncommitted processor changes, run this command instead of step 5:
+To open the saved workspace again, run this command without options:
 
 ```sh
-PREPROCESSING_BUILD_MODE=development \
-	PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-data-preprocessing-service && pwd)" \
-	IMAGE_TAG=local bash scripts/build-docker.sh
+./scripts/tui.sh
 ```
 
-Development mode captures the processor's current production files, including
-uncommitted changes. The image and its `build-identity.json` record development
-source, not a verified release. Use `geocluster-runtime:local` in place of
-`geocluster-runtime:latest` in the commands below.
+Setup saves these choices for this checkout. Find the launch command and
+first-use instructions in `.geocluster/next-steps.txt`.
 
-## Add a project folder
+To change the saved choices, run `./scripts/setup.sh` again. For custom launch
+options, use the [explicit launcher](#use-the-explicit-launcher).
 
-The agent can read only the project folder, which the container sees as
-`/workspace/<PROJECT_ID>/`. It cannot reach your home directory, your downloads,
-or any other host path. Copy the whole data folder into the project, not single
-files, for three reasons:
+If setup reports older settings, follow its instructions to move `.geocluster`
+aside and run setup again. Keep your workspace files. Setup does not move them.
 
-- Geoscience data comes in linked sets. A shapefile needs its `.shx`, `.dbf`, and
-  `.prj` files. Assays need their collars and surveys to be located. A report
-  cites its appendix tables. A file copied alone loses those links.
-- You can name a folder in your question ("profile every CSV in
-  `wattle-creek/`") instead of naming files one at a time.
-- Naming a path does not load the file into the conversation. The agent's tools
-  read the files, and only compact results enter the conversation.
+## Add a data folder
 
-The steps below copy `runtime/demo-bundles/wattle-creek/v1`, a synthetic sample
-of surface assays, drillhole collars, and drillhole assays that ships with this
-repository. To use your own data, replace that path with your folder.
+1. Run `/exit` inside GeoCluster before a file transfer.
+2. In your usual terminal, start the import command.
 
-Pick the steps for your Docker setup.
+	```sh
+	./scripts/workspace-files.sh import
+	```
 
-### Rootful Docker on Linux
+3. Choose the source folder and a new folder name inside the workspace when prompted.
 
-These steps bind-mount `native-workspace/` from this checkout. Git and the image
-build ignore that folder.
+The command __copies__ your data into a new folder in the saved workspace.
+Original files stay unchanged. For private source files, it asks you to give
+GeoCluster's tools access to the workspace copy.
 
-1. Create the workspace root, owned by root. The runtime keeps private state,
-   including provider credentials, beside the project in this folder. Root
-   ownership keeps other users from changing it. Use a new folder, not your home
-   or an existing project.
+Copy complete data folders to preserve linked files. For example, a shapefile
+needs its `.shx`, `.dbf`, and `.prj` files, and drillhole assays need collars and
+surveys for spatial analysis. Name a folder in your question to have the agent
+inspect its files.
 
-   ```sh
-   sudo install -d -o root -g root -m 0755 native-workspace
-   ```
+Data folders and saved results live at `/workspace/default/` inside GeoCluster.
+The workspace also keeps conversations and provider connections separately from
+your data.
+With remote Docker, imports transfer your data to that Docker host.
 
-2. Create the project folder, owned by you. `default` is the project ID.
+GeoCluster does not open local folders automatically. Use import to copy them
+into Docker-managed storage.
 
-   ```sh
-   sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 native-workspace/default
-   ```
-
-3. Copy the data folder into the project.
-
-   ```sh
-   cp -r runtime/demo-bundles/wattle-creek/v1 native-workspace/default/wattle-creek
-   ```
-
-4. Make the copy readable by the runtime. The agent runs as UID 999 and the file
-   service as UID 998. `cp` applies your umask, which can leave files that only
-   you can read. `a+rX` adds read access for everyone, and execute access for
-   folders only.
-
-   ```sh
-   chmod -R a+rX native-workspace/default/wattle-creek
-   ```
-
-5. Start the TUI with this workspace. `--workspace-root` mounts the folder at
-   `/workspace`, and `--project` selects the project folder inside it.
-
-   ```sh
-   ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
-   	--workspace-root "$PWD/native-workspace" --project default
-   ```
-
-On the first start, the runtime takes ownership of `native-workspace/default`
-(UID 999). The files you copied keep their owner. You can still read and copy
-results without `sudo`. To add another folder later, exit the TUI first:
-
-1. Copy the folder with `sudo`.
-
-   ```sh
-   sudo cp -r /absolute/path/to/more-data native-workspace/default/more-data
-   ```
-
-2. Make it readable by the runtime.
-
-   ```sh
-   sudo chmod -R a+rX native-workspace/default/more-data
-   ```
-
-### Docker Desktop, rootless Docker, or remote Docker
-
-Without a workspace option, the launcher uses the Docker volume
-`geocluster-native-workspace` and the project `default`. A short-lived helper
-container copies files into the volume. Exit the TUI before you start.
-
-1. Check that no container uses the volume. The command prints nothing when the
-   volume is free.
-
-   ```sh
-   docker ps -q --filter volume=geocluster-native-workspace
-   ```
-
-2. Copy the data folder into the volume. The helper mounts the volume at
-   `/workspace` and your folder read-only at `/import`. It creates the project
-   folder if needed, copies the data, and makes the copy readable by the
-   runtime. Pick a destination name that does not exist yet: `cp -r` nests a
-   folder inside an existing one.
-
-   ```sh
-   docker run --rm --entrypoint /bin/sh \
-   	--mount type=volume,src=geocluster-native-workspace,dst=/workspace \
-   	--mount type=bind,src="$PWD/runtime/demo-bundles/wattle-creek/v1",dst=/import,readonly \
-   	geocluster-runtime:latest \
-   	-c 'mkdir -p /workspace/default && cp -r /import /workspace/default/wattle-creek && chmod -R a+rX /workspace/default/wattle-creek'
-   ```
-
-   Change nothing in `/workspace` outside your project folder. The runtime
-   refuses to start when `/workspace`, `/workspace/.runtime`, or the files in
-   `.runtime` are not owned by root or are writable by other users.
-
-3. Start the TUI.
-
-   ```sh
-   ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest
-   ```
+For direct access to files on your computer,
+[use a dedicated host folder](#use-a-dedicated-host-folder). See
+[Protect your workspace](#protect-your-workspace) for access and credential handling.
 
 ## Ask about the folder
 
-1. Run `/connect` in the TUI to connect your provider. Then run `/models` to select
-   a model. No GeoCluster account or token is needed, and startup itself does not
-   perform paid inference. The connection stays in this workspace for later
-   starts.
+1. Run `/connect` inside GeoCluster to connect your provider. Your connection is
+   saved in this workspace.
 
-2. Ask a question that names the folder or the files in it:
+2. Run `/models` to choose a model.
 
-   > Check wattle-creek/drilling/assays.csv against wattle-creek/drilling/collars.csv
-   > by hole_id. Save unmatched intervals and a QA report. Preserve reported values
-   > and do not invent collars.
+3. If you selected the samples, ask this question. Use the sample folder name
+   shown by setup if you chose a name other than `wattle-creek`.
 
-   The answer should report hole `WC141`, which has assay intervals but no
-   collar.
+   > Compare wattle-creek/drilling/assays.csv with wattle-creek/drilling/collars.csv
+   > using hole_id. Save assay rows with no matching collar and a short data-quality
+   > report. Keep the input files unchanged.
 
-3. Find the saved files in the paths that the answer lists. Each conversation
-   saves its outputs under `runs/<session-id>/results/` in the project folder.
-   With the bind mount, that is
-   `native-workspace/default/runs/<session-id>/results/` on your host. If the TUI
-   asks for permission to write a file, approve or deny the request there.
+   Look for `WC141` in the results: it has assay intervals but no matching collar.
 
-Other questions to try:
+4. Find the saved files in the paths that the answer lists. Each conversation
+   saves its outputs under `runs/<session-id>/results/` in the workspace.
+   If the TUI asks for permission to write a file, approve or deny the request
+   there. Use [Share results](#share-results) to copy outputs to your computer.
+
+Try this question with the sample data:
 
 > Profile every CSV in wattle-creek/. Give one table of columns, units, and
 > missing values per file.
 
-> Summarize the sampling methods in report.pdf. Cite the PDF pages and distinguish
+For your own data, replace the filenames in these examples:
+
+> Summarize the sampling methods in report.pdf. Cite the PDF pages. Distinguish
 > reported findings from your interpretation.
 
 > Cluster the selected geochemical columns in assays.csv. Explain the method and
@@ -255,140 +153,216 @@ Other questions to try:
 
 ## Read what each specialist did
 
-The agent you talk to delegates dataset work to an orchestrator. The orchestrator
-delegates to specialists: Dataops, Transform, Analytics, Geoviz, and Voxel, with
-Extended for capability gaps. Each one works in its own session. Open those
-sessions to read the tool calls, the scripts each specialist wrote, and their
-output. Check them before you share a number.
+The Geology agent delegates dataset work to an orchestrator. The orchestrator
+assigns tasks to DataOps, Transform, Analytics, GeoViz, and Voxel. It calls Extended
+when a task needs additional capabilities, such as package installation.
+Each specialist works in its own session. Open a session to inspect its tool
+calls and scripts.
 
 1. Click a line such as `Orchestrator Subagent — Check drilling inputs` in the
    transcript. You can also press `↓` with the cursor at the end of the prompt to
    open the **Subagents** picker.
 
-2. Press `ctrl+a` to list finished sessions. Until you do, the picker lists only
-   running sessions and shows `No active subagents` after a run.
+2. Press `ctrl+a` to include inactive sessions. By default, the picker lists only
+   active sessions and shows `No active subagents` after a run.
 
-3. Select a session and press `Enter`. The picker shows a tree: specialists sit
-   under the orchestrator, and Extended sits under the specialist that called it.
+3. Select a session and press `Enter`. Specialists, including Extended, appear
+   under the orchestrator in the session tree.
 
 4. Press `Esc` to go back up one level.
 
-The picker returns to running sessions each time you open another session, so
+The picker returns to active sessions each time you open another session, so
 press `ctrl+a` again there. After you restart the TUI, the tree loads one level at
 a time: open the orchestrator to see its specialists.
 
 ## Share results
 
-Ask for a shareable brief when you need something to email or present. The
-Geoviz specialist builds it from the findings already in the conversation:
+Ask for a shareable brief when you need something to email or present:
 
 > Make a shareable brief of the drilling QA results for my manager.
 
-The pack is saved under `runs/<session-id>/results/share/`:
+GeoViz uses the findings already in the conversation. Its instructions call for
+these files under `runs/<session-id>/results/share/`:
 
-- `<date>_<title>.pdf`: a one- to two-page brief.
-- `<date>_<title>.docx`: the same brief, editable in Word.
-- `<date>_<title>.pptx`: a title slide and one slide per finding.
-- `<date>_<title>.xlsx`: the key tables, one sheet each.
-- `figures/`: each figure as a 300 dpi PNG for slides and as an SVG.
-- `brief.md`: the Markdown source of the three documents.
+- A PDF brief and an editable Word copy.
+- A PowerPoint deck with a summary, findings, methods, and caveats.
+- An Excel workbook with one sheet per key table.
+- A `figures/` folder with PNG and SVG copies of each figure.
+- `brief.md`, the source for the PDF, Word, and PowerPoint files.
 
-Each slide heading states one finding, and the slide's speaker notes explain it.
-Axes carry units, colours are colour-blind safe, and every image has alt text.
-Numbers keep their sources as footnotes. Review the brief before you send it.
+Before sharing the pack, check the file list, content, and layout. Look for source
+footnotes, axis units, colour-blind-safe palettes, image alt text, and speaker
+notes for findings.
 
-To copy the pack to your host with the bind mount, run this from the checkout.
-Replace `<session-id>` with the folder name from the answer.
+To copy results from the saved workspace to your computer:
 
-```sh
-cp -r native-workspace/default/runs/<session-id>/results/share ./wattle-creek-brief
-```
+1. Finish pending work and run `/exit` inside GeoCluster.
+2. Stop other programs that edit the workspace files, including host editors.
+3. In your usual terminal, start the export command.
 
-To copy the pack out of the Docker volume:
+	```sh
+	./scripts/workspace-files.sh export
+	```
 
-1. Create the destination folder on your host.
+4. Choose the results folder from the displayed paths. Choose a new destination
+   folder on your computer when prompted.
 
-   ```sh
-   mkdir -p wattle-creek-brief
-   ```
+Exports create a new destination without replacing existing files. They copy
+ordinary workspace content, not provider connections or private runtime state.
+Transfers reject links and mounted subtrees. They are not permission-preserving
+backups.
+Imports and exports require exclusive access to the workspace. Run
+`./scripts/workspace-files.sh --help` for explicit storage options.
 
-2. Copy the pack with a helper container that runs as your user and mounts the
-   volume read-only.
-
-   ```sh
-   docker run --rm --entrypoint /bin/sh --user "$(id -u):$(id -g)" \
-   	--mount type=volume,src=geocluster-native-workspace,dst=/workspace,readonly \
-   	--mount type=bind,src="$PWD/wattle-creek-brief",dst=/export \
-   	geocluster-runtime:latest \
-   	-c 'cp -r /workspace/default/runs/<session-id>/results/share/. /export/'
-   ```
-
-## Work with local files
-
-Keep the retained workspace to preserve files, conversation history, and provider
-connections. Native engine state has mode `0700` and is outside the project
-directory. Whole-volume backups can contain provider secrets and
-refresh tokens. Protect those backups like credentials.
-
-Host OpenCode accounts and credentials are not copied or mounted automatically.
-Run `./scripts/run-runtime-tui.sh --help` for image, workspace, and explicit
-provider-environment options. `scripts/tui.sh` delegates to this launcher and
-accepts the same options. Native startup publishes no host ports. Some provider
-login methods show a URL or device code. Methods that require a container
-loopback callback may need extra operator configuration.
+## Configure the runtime
 
 Use ordinary OpenCode user configuration for provider settings and model defaults.
-Native mode also discovers project configuration. Project plugins and configuration
-can execute code as the engine identity. Trust them before opening a project.
-The state permissions do not hide credentials from that identity's shell tools;
-native mode is not a credential sandbox. Agent tool permissions guide delegation;
-they do not sandbox code executed by an agent. See the
-[security limits](docs/DESIGN_INVARIANTS.md#security-limits) when choosing where
-to run the harness.
+Host OpenCode accounts and credentials are not imported automatically.
+Some provider login methods show a URL or device code. Native startup publishes
+no host ports, so login methods that need a container loopback callback may
+require extra configuration.
 
-The retained volume has one lifecycle owner and a profile marker. Concurrent
-owners and reuse by another profile are rejected. To change profiles, copy only
-ordinary project data and saved results from `/workspace/<PROJECT_ID>/` to a new
-volume's project directory. Never copy the enclosing `/workspace` root,
-`.runtime`, or `.ide-state`. This does not transfer sessions or credentials.
+Use `./scripts/tui.sh` without options to open the saved workspace. It does not
+accept workspace, provider, or processing overrides. Use the explicit launch
+command printed by setup for those options.
 
-Integrated document extraction is optional. For
-[native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md), restart with
-`--processing-model provider/model[#variant]`. Processing reuses the native
-OpenCode connections by default while keeping its model selection separate from
-the conversation. Ordinary startup does not enable it.
+GeoCluster can read text already present in PDF files. To enable extraction from
+scanned pages, add `--processing-model 'provider/model[#variant]'` to your explicit
+launch command. Keep the same image and workspace choices. Replace the
+model reference with an available model. Processing reuses your native OpenCode
+connections but selects its model separately from the conversation. Ordinary
+startup leaves processing disabled. See
+[native document processing](docs/NATIVE_DOCUMENT_PROCESSING.md) for setup,
+job tracking, and recovery.
 
-### Does my data leave the machine?
+### Use the explicit launcher
+
+```sh
+./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
+	--workspace-volume geocluster-native-workspace
+```
+
+Run `./scripts/run-runtime-tui.sh --help` for custom workspace, provider-environment,
+and processing-model options. This launcher does not read saved setup choices.
+Reuse the same workspace options on every explicit launch. Add
+`--require-existing-workspace` to refuse creation when its data folder is missing.
+
+#### Use a dedicated host folder
+
+Use local rootful Linux Docker. Choose a new dedicated folder outside the
+checkout, not your home directory or an existing data folder. Run the preparation
+commands only if the workspace does not already exist. Do not change ownership
+of an existing workspace to make startup pass.
+
+```sh
+workspace="$HOME/.local/share/geocluster/workspaces/manual"
+mkdir -p "$(dirname "$workspace")"
+sudo install -d -o root -g root -m 0755 "$workspace"
+./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
+	--workspace-root "$workspace"
+```
+
+Your data and results live in `$workspace/default/` on the Docker host. Put data
+folders there, not beside `default/`. Conversations and provider connections are
+kept separately under `$workspace/.runtime/`.
+
+Workspace files become container-owned. Host edits can need administrator access.
+For Desktop, rootless, or remote Docker, prefer Docker-managed storage.
+A bind path refers to the Docker host.
+
+### Build the image manually
+
+Run these commands from the harness checkout. Install Docker Buildx first.
+The image needs the document processor source even when extraction is disabled.
+Choose a new processor folder. Keep existing checkouts with local changes.
+
+```sh
+git submodule update --init --recursive
+git clone --no-checkout \
+	https://github.com/EigenformAI/geocluster-data-preprocessing-service.git \
+	../geocluster-processor-release
+git -C ../geocluster-processor-release checkout --detach \
+	"$(python3 -c 'import json; print(json.load(open("scripts/preprocessing-release.json"))["sourceRevision"])')"
+git -C ../geocluster-processor-release submodule update --init --recursive
+PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-processor-release && pwd)" \
+	bash scripts/build-docker.sh
+```
+
+Release builds require the pinned source without local changes. To build with
+processor changes instead, use:
+
+```sh
+PREPROCESSING_BUILD_MODE=development \
+	PREPROCESSING_SOURCE_DIR="$(cd ../geocluster-processor-release && pwd)" \
+	IMAGE_TAG=local bash scripts/build-docker.sh
+```
+
+Use `geocluster-runtime:local` for that development image.
+
+## Protect your workspace
+
+Keep the workspace to preserve files, conversation history, and provider
+connections. Native engine state is outside the content directory with mode
+`0700`. Whole-workspace backups can contain provider credentials and refresh
+tokens. Protect those backups like credentials.
+
+The launcher mounts the workspace rather than your home directory or unrelated
+host folders. Agent code is not confined to the data folders.
+
+Import only data folders whose configuration and plugins you trust. Both can execute
+code as the engine's Unix user. Shell tools running as that user can access its
+credentials. Agent tool permissions guide delegation. They do not sandbox code
+executed by an agent. Native mode is not a credential sandbox. See the
+[security limits](docs/DESIGN_INVARIANTS.md#security-limits).
+
+Run only one runtime per workspace. The runtime rejects concurrent use and reuse
+by a different deployment profile. To change profiles, copy only ordinary data
+and saved results from `/workspace/default/` into the new deployment's content
+directory. Never copy the enclosing `/workspace` root, `.runtime`, or `.ide-state`.
+Sessions and credentials do not transfer with ordinary workspace files.
+
+### Data privacy
 
 In a local Docker installation, the runtime, workspace, and bundled analysis tools
 run on your Docker host. Model requests go to the provider you connect. They can
 include prompts, file content, and tool results. Agent tools can also make network
-requests. Running the container locally does not make inference offline or prevent
-data disclosure. Choose a provider and deployment appropriate for your data.
+requests. Choose your model provider and deployment to match your data's privacy
+requirements.
 
-## Continue, update, or stop
+## Continue or stop
 
-- To continue, start the launcher with the same workspace options you used
-  before. Without workspace options it uses the Docker volume.
+To continue with the saved workspace, run:
 
-  ```sh
-  ./scripts/run-runtime-tui.sh --image geocluster-runtime:latest \
-  	--workspace-root "$PWD/native-workspace" --project default
-  ```
+```sh
+./scripts/tui.sh
+```
 
-- To list every launcher option, run:
+To choose another image, workspace location, or Docker connection, run `./scripts/setup.sh`
+again.
 
-  ```sh
-  ./scripts/run-runtime-tui.sh --help
-  ```
+To stop, run `/exit` in the TUI. Exiting shuts down its local runtime and owned
+services. Finish pending work before you exit or rebuild.
 
-- To stop, exit the TUI. Exiting shuts down its local runtime and owned services.
-  Finish pending work before you exit or rebuild.
+## Update the image
 
-- To update, pull the new source. If step 2 of
-  [Build the image](#build-the-image) now names a different processor tag,
-  delete the processor checkout and clone it again with step 2. Then rebuild the
-  image with step 5.
+1. Run `/exit` in the TUI.
+2. Pull the latest harness source.
+3. Update the geology tools submodule:
+
+	```sh
+	git submodule update --init --recursive
+	```
+
+4. Run `./scripts/setup.sh`. Choose **Build the current GeoCluster image** in the
+   image choices. Setup fetches the pinned processor source and offers to keep
+   your existing workspace.
+5. Open the saved workspace with `./scripts/tui.sh`.
+
+For manual builds, follow [Build the image manually](#build-the-image-manually).
+Keep modified processor checkouts instead of replacing them. After a rebuild,
+run setup to select the new image. Saved launch uses the previously selected
+immutable image ID, not a tag that may have moved. For document processing,
+restart with your explicit launch command and its processing options.
 
 ## Documentation
 
