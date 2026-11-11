@@ -1542,6 +1542,19 @@ validate_launch() {
     fi
 }
 
+check_recorded_project_identity() {
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" <<'PY'
+import contextlib
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv[1])
+helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+    workspace.assert_provisioning_identity(sys.argv[3])
+PY
+}
+
 record_local_workspace_sharing() {
     /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" "$LOCAL_WORKSPACE_HOST_UID" <<'PY'
 import contextlib

@@ -29,6 +29,7 @@ chmod() { if [ "$2" = "$WORKSPACE_DIR" ]; then echo "chmod:$1"; fi; }
 rm() { :; }
 node() { echo native-prepare; exit 0; }
 record_local_workspace_sharing() { echo remember-sharing; }
+check_recorded_project_identity() { :; }
 `
 	return { root, setup }
 }
@@ -297,6 +298,20 @@ launch_runtime --runtime-lock-held tui
 	const first = boot(false)
 	assert.equal(first.status, 0, first.stdout + first.stderr)
 	assert.match(await fs.readFile(`/workspace/.runtime/setup/sharing/${project}.json`, "utf8"), /"uid":20001/)
+	const retained = `${workspace}-retained`
+	t.after(() => fs.rm(retained, { recursive: true, force: true }))
+	await fs.rename(workspace, retained)
+	await fs.mkdir(workspace)
+	await fs.chown(workspace, 999, 999)
+	await fs.chmod(workspace, 0o2770)
+	const replacement = await fs.stat(workspace, { bigint: true })
+	const replacementStart = boot(false)
+	assert.notEqual(replacementStart.status, 0)
+	assert.doesNotMatch(replacementStart.stdout, /\[workspace\]|native-prepare/)
+	assert.equal((await fs.stat(workspace, { bigint: true })).ctimeNs, replacement.ctimeNs)
+	assert.equal((await fs.stat(workspace, { bigint: true })).mode, replacement.mode)
+	await fs.rm(workspace, { recursive: true })
+	await fs.rename(retained, workspace)
 	const stripped = spawnSync("/usr/bin/setfacl", ["-b", "-k", workspace], { uid: 999, gid: 999, encoding: "utf8" })
 	assert.equal(stripped.status, 0, stripped.stderr)
 	const before = await fs.stat(workspace, { bigint: true })

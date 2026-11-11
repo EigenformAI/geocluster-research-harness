@@ -206,7 +206,8 @@ without `--require-existing-workspace` to provision the same project again. To
 change host UID, an administrator must first remove the previous account's grants
 throughout the project, then explicitly launch with `--host-uid UID`. Only a
 successful complete provision refreshes the protected policy. This does not
-authorize replacement of a previously recorded project inode. For a full custom
+authorize replacement of a previously recorded project inode: startup checks
+that identity before any project permission repair or grant. For a full custom
 permission migration, an administrator can deliberately remove the project's
 root-owned policy file while the runtime is stopped. That discards the recorded
 sharing expectation; it is not an opt-out operation or an ordinary file transfer.

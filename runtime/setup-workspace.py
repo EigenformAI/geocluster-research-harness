@@ -196,6 +196,23 @@ class Workspace:
         if record is not None and record != dict(retained_identity(fd), uid=uid):
             transfer.fail('unsafe_workspace', 'Project identity or host sharing grant differs from its protected policy; use explicit provisioning for deliberate permission changes')
 
+    def assert_provisioning_identity(self, project):
+        """Allow deliberate UID recovery, never mutate a replacement project."""
+        record = self.sharing_policy(project)
+        if record is None:
+            return
+        try:
+            fd = transfer.open_child(self.root, project, directory=True)
+        except FileNotFoundError:
+            transfer.fail('unsafe_workspace', 'Previously shared project is missing; retain its protected policy for inspection')
+        try:
+            current = retained_identity(fd)
+            if any(record[key] != current[key] for key in ('device', 'inode')):
+                transfer.fail('unsafe_workspace', 'Previously shared project identity changed; provisioning cannot repair a replacement')
+            transfer.assert_named(self.root, project, fd)
+        finally:
+            os.close(fd)
+
     def remember_sharing(self, project, uid):
         """Trusted locked bootstrap/publication only, after complete provisioning.
 

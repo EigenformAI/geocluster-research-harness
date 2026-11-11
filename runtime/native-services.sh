@@ -42,6 +42,8 @@ native_main() {
     NATIVE_PID=''
     RUNTIME_MCP_PORT=7710
     # All errors before child startup remain setup failures, with no drain writes.
+    # Recovery may change a UID, but must reject a replacement before granting it access.
+    check_recorded_project_identity
     prepare_protected_parents
     # Only create the project root; never recursively re-own host project inputs.
     ensure_real_dir "$WORKSPACE_DIR"
