@@ -68,9 +68,10 @@ project.mkdir()
 os.chown(project, int(sys.argv[2]), int(sys.argv[3]))
 os.chmod(project, int(sys.argv[4]))
 if sys.argv[5]:
-    entries = [(1, 7, 0xffffffff), (2, 4, 20001), (4, 7, 0xffffffff), (16, 7, 0xffffffff), (32, 5, 0xffffffff)]
+    entries = [(1, 7, 0xffffffff), (2, 7 if sys.argv[5] == 'shared' else 4, 20001), (4, 7, 0xffffffff), (16, 7, 0xffffffff), (32, 5, 0xffffffff)]
     value = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in entries)
-    os.setxattr(project, 'system.posix_acl_' + sys.argv[5], value)
+    for kind in (('access', 'default') if sys.argv[5] == 'shared' else (sys.argv[5],)):
+        os.setxattr(project, 'system.posix_acl_' + kind, value)
 `, [path.join(workspace, project), String(uid), String(gid), String(mode), acl || ""])
 		},
 		snapshot(project) {
@@ -90,14 +91,15 @@ print(json.dumps({'uid': info.st_uid, 'gid': info.st_gid, 'mode': stat.S_IMODE(i
                   'acls': acls, 'children': sorted(os.listdir(project)), 'input': (project / 'input.csv').read_text()}))
 `, [path.join(workspace, project)]))
 		},
-		launch(project = "default", required = true) {
+		launch(project = "default", required = true, sharingUid = "") {
 			const args = [path.join(root, "runtime/lifecycle-lock.py"), workspace, "native", "bash", "-c", `${definitions}
 WORKSPACE_DIR="$TEST_WORKSPACE/$PROJECT_ID"
 RUNTIME_CODE_DIR="$TEST_RUNTIME"
 validate_launch() { RUNTIME_PROFILE=native; }
+run_local_workspace() { :; }
 launch_runtime --runtime-lock-held tui
 `]
-			const env = { PATH: process.env.PATH, TEST_WORKSPACE: workspace, TEST_RUNTIME: runtime, TEST_PYTHON: python, TEST_NATIVE_NORMALIZE: privileged ? "1" : "0", PROJECT_ID: project, ...(required ? { RUNTIME_REQUIRE_EXISTING_PROJECT: "1" } : {}) }
+			const env = { PATH: process.env.PATH, TEST_WORKSPACE: workspace, TEST_RUNTIME: runtime, TEST_PYTHON: python, TEST_NATIVE_NORMALIZE: privileged ? "1" : "0", PROJECT_ID: project, LOCAL_WORKSPACE_HOST_UID: sharingUid, ...(required ? { RUNTIME_REQUIRE_EXISTING_PROJECT: "1" } : {}) }
 			return privileged
 				? runRoot("/usr/bin/env", ["-i", ...Object.entries(env).map(([name, value]) => `${name}=${value}`), python, ...args])
 				: spawnSync("python3", args, { env, encoding: "utf8", timeout: 5000 })
@@ -126,6 +128,22 @@ test("required existing project reaches native startup with its files retained",
 		const snapshot = fixture.snapshot(project)
 		assert.equal(snapshot.input, "hole_id\nWC141\n")
 		assert.deepEqual(snapshot.children, ["input.csv", "startup"])
+	}
+})
+
+test("saved shared project relaunch accepts the selected UID and opt-out but rejects a different UID before repair", async (t) => {
+	const fixture = await startupFixture(t, { privileged: true })
+	if (!fixture) return
+	fixture.prepare("default", { acl: "shared" })
+	const before = fixture.snapshot("default")
+	const wrong = fixture.launch("default", true, "20002")
+	assert.equal(wrong.status, 2, wrong.stdout + wrong.stderr)
+	assert.match(wrong.stderr, /ACL.*selected UID/)
+	assert.deepEqual(fixture.snapshot("default"), before)
+	for (const uid of ["20001", ""]) {
+		const result = fixture.launch("default", true, uid)
+		assert.equal(result.status, 0, result.stdout + result.stderr)
+		assert.deepEqual(fixture.snapshot("default").acls, before.acls)
 	}
 })
 

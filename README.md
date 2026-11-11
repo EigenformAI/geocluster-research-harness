@@ -223,8 +223,8 @@ no host ports, so login methods that need a container loopback callback may
 require extra configuration.
 
 Use `./scripts/tui.sh` without options to open the saved workspace. It does not
-accept workspace, provider, or processing overrides. Use the explicit launch
-command printed by setup for those options.
+accept workspace, provider, processing, or host-sharing overrides. Use the
+explicit launch command printed by setup for those options.
 
 GeoCluster can read text already present in PDF files. To enable extraction from
 scanned pages, add `--processing-model 'provider/model[#variant]'` to your explicit
@@ -243,9 +243,12 @@ job tracking, and recovery.
 ```
 
 Run `./scripts/run-runtime-tui.sh --help` for custom workspace, provider-environment,
-and processing-model options. This launcher does not read saved setup choices.
+processing-model, and host-sharing options. This launcher does not read saved
+setup choices.
 Reuse the same workspace options on every explicit launch. Add
 `--require-existing-workspace` to refuse creation when its data folder is missing.
+Native launch always uses `default/` inside the workspace. There is no
+project-selection option.
 
 #### Use a dedicated host folder
 
@@ -266,9 +269,46 @@ Your data and results live in `$workspace/default/` on the Docker host. Put data
 folders there, not beside `default/`. Conversations and provider connections are
 kept separately under `$workspace/.runtime/`.
 
-Workspace files become container-owned. Host edits can need administrator access.
-For Desktop, rootless, or remote Docker, prefer Docker-managed storage.
+Qualified local rootful Linux bind mounts automatically share ordinary project
+content with the account invoking the launcher. Startup reports the selected UID
+and provisioning result. The project directory becomes agent-owned (UID 999),
+while existing files keep their owners. POSIX ACLs grant your account read and
+write access to shared content, so you can edit, rename, delete, and copy results
+without `sudo`. The workspace root, private transfer staging, and `.runtime/`
+state stay protected.
+
+If you choose host-folder storage in setup, saved launches also use automatic
+sharing. The launcher selects the invoking UID at each launch, not at setup time.
+Automatic selection requires an ordinary account outside the reserved UID range
+996–999, the default Docker context, and a standard local Unix socket without
+endpoint overrides. Docker Desktop, rootless Docker, and user-namespace remapping
+do not qualify. Use Docker-managed storage for those environments or remote Docker.
 A bind path refers to the Docker host.
+
+Use [Add a data folder](#add-a-data-folder) for checked imports into a saved
+workspace, including private source files. For the manual workspace above, use:
+
+```sh
+./scripts/workspace-files.sh import --image geocluster-runtime:latest \
+	--workspace-root "$workspace"
+```
+
+Setup samples and imports are immediately accessible to the shared host account
+when `default/` already carries the exact supported sharing ACL, which the
+transfer helper validates.
+An unshared workspace gains host access on its next successful sharing-enabled
+launch. Ordinary new files inherit default sharing ACLs. Explicit private modes
+such as `0600` or `0700`, permission-preserving copies, and same-filesystem moves
+can prevent that inheritance. Restart does not force private files open.
+
+For custom permissions, add `--host-uid auto`, `--host-uid none`, or
+`--host-uid UID` to an explicit launch command. `auto` is the default; `none`
+disables provisioning, and a numeric UID selects an account on the Docker host.
+These overrides are not saved and are not accepted by `./scripts/tui.sh`.
+Disabling provisioning does not undo existing grants or default ACLs. Checked
+imports still grant the already-shared account access when the existing project
+ACL validates. See [local workspace sharing](ENVIRONMENT_VARIABLES.md#local-workspace-sharing)
+for qualification requirements, UID restrictions, and recovery actions.
 
 ### Build the image manually
 

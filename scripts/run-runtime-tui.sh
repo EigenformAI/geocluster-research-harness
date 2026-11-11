@@ -6,25 +6,27 @@ image="${RUNTIME_TUI_IMAGE:-geocluster-runtime:latest}"
 volume=geocluster-native-workspace
 workspace_root=''
 require_existing_workspace=false
+host_uid_mode=auto
 names=()
 processing_model=''
 processing_descriptor=''
 die() { echo "runtime-tui: $*" >&2; exit 2; }
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --image|--workspace-volume|--workspace-root|--engine-env|--processing-model|--processing-engine-descriptor)
+        --image|--workspace-volume|--workspace-root|--host-uid|--engine-env|--processing-model|--processing-engine-descriptor)
             [ "$#" -ge 2 ] || die "$1 requires a value"
             case "$1" in
                 --image) image="$2" ;;
                 --workspace-volume) volume="$2" ;;
                 --workspace-root) workspace_root="$2" ;;
+                --host-uid) host_uid_mode="$2" ;;
                 --processing-model) processing_model="$2" ;;
                 --processing-engine-descriptor) processing_descriptor="$2" ;;
                 --engine-env)
                     name="$2"
                     [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "invalid engine environment name: $name"
                     case "$name" in
-                        PROJECT_ID|OPENCODE_*|GEOCLUSTER_*|RUNTIME_*|IDE_*|PREPROCESSING_*|R2_*|XDG_*|LD_*|HOME|PATH|NODE_OPTIONS|BUN_OPTIONS|PYTHONHOME|PYTHONPATH|LLM_PROXY_URL|SYNC_ENABLED|FILES_SYNC_ADAPTER|OWNED_DEMO_ENABLED)
+                        PROJECT_ID|OPENCODE_*|GEOCLUSTER_*|RUNTIME_*|IDE_*|PREPROCESSING_*|R2_*|XDG_*|LD_*|LOCAL_WORKSPACE_*|HOME|PATH|NODE_OPTIONS|BUN_OPTIONS|PYTHONHOME|PYTHONPATH|LLM_PROXY_URL|SYNC_ENABLED|FILES_SYNC_ADAPTER|OWNED_DEMO_ENABLED|FILES_LIMITS|FILES_STATE_DIR|VOXEL_LIMITS)
                             die "reserved engine environment name: $name" ;;
                     esac
                     [ "${!name+x}" = x ] || die "engine environment variable $name is not set"
@@ -36,7 +38,7 @@ while [ "$#" -gt 0 ]; do
             require_existing_workspace=true
             shift ;;
         --help|-h)
-            echo 'usage: scripts/run-runtime-tui.sh [--image IMAGE] [--workspace-volume NAME | --workspace-root DIRECTORY] [--require-existing-workspace] [--engine-env NAME]... [--processing-model PROVIDER/MODEL[#VARIANT]] [--processing-engine-descriptor FILE]'
+            echo 'usage: scripts/run-runtime-tui.sh [--image IMAGE] [--workspace-volume NAME | --workspace-root DIRECTORY] [--host-uid auto|none|UID] [--require-existing-workspace] [--engine-env NAME]... [--processing-model PROVIDER/MODEL[#VARIANT]] [--processing-engine-descriptor FILE]'
             echo '  --require-existing-workspace  Refuse missing or unsafe workspace content under the workspace lock.'
             exit 0 ;;
         *) die "unknown option: $1" ;;
@@ -53,7 +55,8 @@ fi
 mount=(--mount "type=volume,src=$volume,dst=/workspace")
 if [ -n "$workspace_root" ]; then
     [ -d "$workspace_root" ] || die 'workspace root must be an existing retained volume directory'
-    mount=(--mount "type=bind,src=$(realpath "$workspace_root"),dst=/workspace")
+    workspace_root=$(realpath "$workspace_root")
+    mount=(--mount "type=bind,src=$workspace_root,dst=/workspace")
 fi
 forward=()
 pull=()
@@ -62,13 +65,18 @@ if [ "$require_existing_workspace" = true ]; then
     pull=(--pull=never)
 fi
 for name in "${names[@]}"; do forward+=(-e "$name"); done
+for name in LOCAL_WORKSPACE_SCAN_MS FILES_LIMITS; do
+    if [ "${!name+x}" = x ]; then forward+=(-e "$name=${!name}"); fi
+done
 if [ -n "$processing_model" ]; then forward+=(-e "RUNTIME_NATIVE_PROCESSING_MODEL=$processing_model"); fi
 if [ -n "$processing_descriptor" ]; then
     [ -f "$processing_descriptor" ] && [ ! -L "$processing_descriptor" ] || die 'engine descriptor must be a regular file, not a symlink'
     forward+=(--mount "type=bind,src=$(realpath "$processing_descriptor"),dst=/run/native-external-engine.json,readonly" -e RUNTIME_NATIVE_PROCESSING_ENGINE_DESCRIPTOR=/run/native-external-engine.json)
 fi
+host_uid=$(python3 "$(dirname "${BASH_SOURCE[0]}")/native-host-uid.py" "$host_uid_mode" "$workspace_root")
 joined=$(IFS=,; echo "${names[*]}")
-# -e NAME lets Docker read the value from its environment; never put it in argv.
+# Provider -e NAME reads its value from the environment, not argv. Bootstrap
+# sharing is explicit so an inherited LOCAL_WORKSPACE_HOST_UID cannot select it.
 exec docker run --rm -it --init --no-healthcheck --stop-timeout 245 \
     "${pull[@]}" "${mount[@]}" -e RUNTIME_PROFILE=native -e PROJECT_ID=default \
-    -e RUNTIME_NATIVE_ENGINE_ENV="$joined" "${forward[@]}" "$image" tui
+    -e LOCAL_WORKSPACE_HOST_UID="$host_uid" -e RUNTIME_NATIVE_ENGINE_ENV="$joined" "${forward[@]}" "$image" tui

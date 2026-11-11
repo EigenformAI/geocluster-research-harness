@@ -195,6 +195,7 @@ class Workspace:
             info = os.fstat(fd)
             if info.st_uid != 999 or info.st_gid != 999 or stat.S_IMODE(info.st_mode) not in (0o2770, 0o2775):
                 transfer.fail('unsafe_project', 'Project must already have native ownership 999:999 and mode 2770 or 2775; existing permissions are never repaired', project=project)
+            transfer.project_sharing_uid(fd)
             return self.keep(fd), created
         except BaseException:
             os.close(fd)
@@ -205,6 +206,7 @@ class Workspace:
         info = os.fstat(fd)
         if info.st_uid != 999 or info.st_gid != 999 or stat.S_IMODE(info.st_mode) not in (0o2770, 0o2775):
             transfer.fail('unsafe_project', 'Project permissions changed during the operation')
+        transfer.project_sharing_uid(fd)
 
     def read_receipt(self, operation):
         valid_uuid(operation)
@@ -297,7 +299,8 @@ class Workspace:
                 result['outcome'] = 'unverified'
             else:
                 try:
-                    transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                    transfer.verify_tree(tree, record['manifest'], service_ownership=True,
+                                         sharing_uid=transfer.project_sharing_uid(project))
                     result['outcome'] = 'unchanged' if retained_identity(tree) == record['treeIdentity'] else 'modified'
                     transfer.assert_named(project, record['destination'], tree)
                 except (OSError, ValueError):
@@ -315,18 +318,25 @@ class Workspace:
                 transfer.fail('unverified_copy', 'Protected staging identity or manifest changed')
             tree = transfer.open_child(stage, 'tree', directory=True)
             try:
-                transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                sharing_uid = transfer.project_sharing_uid(project)
+                # Preparation can have stopped midway through installing sharing.
+                # Only private staged trees may contain a mixture of original and shared entries.
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True,
+                                     sharing_uid=sharing_uid, allow_unshared=True)
                 if retained_identity(tree) != record['treeIdentity']:
                     transfer.fail('unverified_copy', 'Protected stage no longer matches its verified manifest')
                 transfer.assert_named(stage, 'tree', tree)
                 self.assert_project(record['project'], project)
+                if sharing_uid is not None:
+                    transfer.share_created_tree(tree, record['manifest'], sharing_uid)
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True, sharing_uid=sharing_uid)
                 transfer.assert_named(self.staging, record['operation'], stage)
                 transfer.rename_noreplace(stage, 'tree', project, record['destination'])
                 os.fsync(project)
                 os.fsync(stage)
                 record['state'] = 'published'
                 self.save_receipt(record)
-                transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True, sharing_uid=sharing_uid)
                 transfer.assert_named(project, record['destination'], tree)
                 self.assert_project(record['project'], project)
                 record['state'] = 'verified'

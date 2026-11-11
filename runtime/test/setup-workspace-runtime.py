@@ -137,6 +137,73 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE((sample / 'drilling').stat().st_mode), 0o2770)
         self.assertEqual(stat.S_IMODE((sample / 'drilling/assays.csv').stat().st_mode), 0o660)
 
+    def share(self, path, *, uid=20001):
+        for directory, _, files in os.walk(path):
+            subprocess.run(['setfacl', '--set', f'u::rwx,u:{uid}:rwx,g::rwx,m::rwx,o::r-x,d:u::rwx,d:u:{uid}:rwx,d:g::rwx,d:m::rwx,d:o::r-x', directory], check=True)
+            os.chmod(directory, 0o2775)
+            for name in files:
+                file = Path(directory) / name
+                mode = stat.S_IMODE(file.stat().st_mode)
+                host = 'rwx' if mode & 0o100 else 'rw-'
+                group = 'rwx' if mode & 0o010 else 'rw-'
+                mask = 'rwx' if mode & 0o110 else 'rw-'
+                subprocess.run(['setfacl', '--no-mask', '--set', f'u::{host},u:{uid}:{host},g::{group},m::{mask},o::---', str(file)], check=True)
+
+    def test_shared_samples_remain_unchanged_and_replay_rejects_tampering(self):
+        result = self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
+        project = self.workspace / 'default'
+        self.share(project)
+        inspection = self.success('inspect', '--project', 'default', locked=False)
+        self.assertEqual(inspection['samples'][0]['outcome'], 'unchanged')
+        replay = self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
+        self.assertEqual(replay['operation'], result['operation'])
+        sample = project / 'wattle-creek'
+        for mutation, restore in [
+            (lambda: os.chmod(sample / 'drilling', 0o2777), lambda: os.chmod(sample / 'drilling', 0o2775)),
+            (lambda: subprocess.run(['setfacl', '-m', 'u:20002:rwx', str(sample / 'drilling')], check=True),
+             lambda: subprocess.run(['setfacl', '-x', 'u:20002', str(sample / 'drilling')], check=True)),
+            (lambda: os.chown(sample / 'drilling', 998, 999), lambda: os.chown(sample / 'drilling', 999, 999)),
+            (lambda: subprocess.run(['setfacl', '-b', str(sample / 'drilling/assays.csv')], check=True),
+             lambda: self.share(sample)),
+        ]:
+            mutation()
+            self.assertEqual(self.success('inspect', '--project', 'default', locked=False)['samples'][0]['outcome'], 'modified')
+            self.failure('unverified_copy', 'prepare', '--project', 'default', '--expect', 'absent', '--samples')
+            restore()
+        self.assertEqual(self.success('inspect', '--project', 'default', locked=False)['samples'][0]['outcome'], 'unchanged')
+
+    def test_import_into_shared_project_is_immediately_host_accessible(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        source, manifest, header, body = self.source_archive()
+        header['expect'] = 'existing'
+        result = self.success('import', data=self.frame(header, body))
+        self.assertEqual(result['outcome'], 'unchanged')
+        # Traverse only the test container's outer fixture, not protected runtime state.
+        self.base.chmod(0o755)
+        script = '''import os, pathlib, sys
+p=pathlib.Path(sys.argv[1]); f=p/'folder/input'
+assert f.read_bytes(); f.write_bytes(b'host edit')
+f.rename(p/'folder/renamed'); (p/'folder/renamed').unlink()
+(p/'new').mkdir(); (p/'new/copy').write_text('copy'); (p/'new/copy').unlink(); (p/'new').rmdir()
+try: os.listdir(p.parent.parent/'.runtime/setup/staging')
+except PermissionError: pass
+else: raise AssertionError('private staging exposed')
+'''
+        host = subprocess.run([sys.executable, '-c', script, str(project / 'personal')], user=20001, group=20001, extra_groups=[], capture_output=True)
+        self.assertEqual(host.returncode, 0, host.stderr)
+        self.assertEqual(self.success('receipt', '--operation', result['operation'])['outcome'], 'modified')
+
+    def test_shared_project_rejects_foreign_or_partial_acl_without_repair(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        subprocess.run(['setfacl', '-m', 'u:20002:rwx', str(project)], check=True)
+        before = project.stat().st_ctime_ns
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
+        self.assertEqual(project.stat().st_ctime_ns, before)
+
     def test_image_samples_are_checked_against_provenance_before_copy(self):
         spec = importlib.util.spec_from_file_location('setup_fixture', HELPER)
         module = importlib.util.module_from_spec(spec)
@@ -300,6 +367,29 @@ class RuntimeTests(unittest.TestCase):
         result = self.success('prepare', '--project', 'default', '--expect', 'absent', '--resume', record['operation'], program=program)
         self.assertEqual(result['outcome'], 'unchanged')
         self.assertEqual(result['state'], 'verified')
+
+    def test_partly_shared_stage_stays_private_and_resumes_with_immediate_access(self):
+        record = self.interrupted_samples('staged')
+        self.share(self.workspace / 'default')
+        stage = self.workspace / '.runtime/setup/staging' / record['operation'] / 'tree'
+        # Stop after only the root's sharing metadata is installed.
+        fd = transfer.open_absolute(str(stage))
+        try:
+            root_manifest = {'entries': [record['manifest']['entries'][0]], 'restricted': []}
+            transfer.share_created_tree(fd, root_manifest, 20001)
+        finally:
+            os.close(fd)
+        self.base.chmod(0o755)
+        for uid in (999, 20001):
+            probe = subprocess.run([sys.executable, '-c', 'import os,sys; os.listdir(sys.argv[1])', str(stage)],
+                                   user=uid, group=uid, extra_groups=[], capture_output=True)
+            self.assertNotEqual(probe.returncode, 0)
+        result = self.success('prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+        self.assertEqual((result['state'], result['outcome']), ('verified', 'unchanged'))
+        probe = subprocess.run([sys.executable, '-c', 'import pathlib,sys; assert pathlib.Path(sys.argv[1]).read_bytes()',
+                                str(self.workspace / 'default/wattle-creek/drilling/assays.csv')],
+                               user=20001, group=20001, extra_groups=[], capture_output=True)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
 
     def test_publication_without_verified_receipt_is_never_promoted(self):
         for state in ('uncertain', 'published'):

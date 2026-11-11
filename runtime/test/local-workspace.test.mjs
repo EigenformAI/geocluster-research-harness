@@ -58,6 +58,35 @@ test("local workspace validates canonical host UID, managed settings and literal
 	assert.equal(configured.scanLimit, 123); assert.equal(configured.maxMs, 456)
 })
 
+test("checked transfer sharing matches boot provisioning for directory and executable-file ACL vectors", options, async (t) => {
+	const { provisionLocalWorkspace } = await helper(), f = await fixture(t)
+	const python = (code, ...args) => command("python3", ["-B", "-c", code, new URL("../", import.meta.url).pathname, f.workspaceDir, ...args])
+	const expected = python(`
+import io,json,os,pathlib,sys,tempfile
+sys.path.insert(0,sys.argv[1]); import setup_transfer as t
+with tempfile.TemporaryDirectory() as source:
+ p=pathlib.Path(source)
+ for mode in (0o660,0o670,0o760,0o770):
+  f=p/oct(mode); f.write_text('unchanged'); f.chmod(mode)
+ m=t.capture_source(source); archive=io.BytesIO(); t.build_archive(source,m,archive); archive.seek(0)
+ t.safe_extract(archive,sys.argv[2],'copied',service_ownership=True)
+ print(json.dumps(t.intended_manifest(m,service_ownership=True)))
+`)
+	await provisionLocalWorkspace(f)
+	python(`
+import json,os,sys
+sys.path.insert(0,sys.argv[1]); import setup_transfer as t
+fd=t.open_absolute(sys.argv[2]+'/copied'); manifest=json.loads(sys.argv[3])
+t.verify_tree(fd,manifest,service_ownership=True,sharing_uid=20001)
+# A Python-created shared tree must already be a metadata no-op for boot repair.
+t.share_created_tree(fd,manifest,20001); os.close(fd)
+`, expected)
+	const before = await fs.stat(`${f.workspaceDir}/copied`, { bigint: true })
+	const second = await provisionLocalWorkspace(f)
+	assert.equal(second.changed, 0)
+	assert.equal((await fs.stat(`${f.workspaceDir}/copied`, { bigint: true })).ctimeNs, before.ctimeNs)
+})
+
 test("local workspace preserves owners and file intent, shares real host/agent/service creations, and repeat setup is metadata-noop", options, async (t) => {
 	const { provisionLocalWorkspace } = await helper(), f = await fixture(t)
 	const files = [["root-other-x", 0, 0o601, 0o661, "rw-"], ["data", 20001, 0o640, 0o660, "rw-"], ["owner-x", 998, 0o740, 0o770, "rwx"], ["group-x", 999, 0o650, 0o670, "rw-"]]
@@ -117,6 +146,87 @@ test("first restart preserves inherited ACLs, ctime and observations for newly p
 	assert.deepEqual(watched.map(acl), beforeAcl)
 	assert.equal(restarted.changed, 0)
 	for (const stat of after.slice(1)) assert.equal(Number(stat.mode) & 0o111, 0)
+})
+
+test("real file-service publication shares inherited host folders without exposing private candidates", options, async (t) => {
+	const { provisionLocalWorkspace } = await helper(), f = await fixture(t)
+	await provisionLocalWorkspace(f)
+	const inputs = `${f.workspaceDir}/inputs/nested`, input = `${inputs}/host.csv`
+	await as(hostUid, hostUid, `
+		const fs = require('node:fs'); process.umask(0o077);
+		fs.mkdirSync(${JSON.stringify(inputs)}, { recursive: true });
+		fs.writeFileSync(${JSON.stringify(input)}, 'host');
+	`)
+	// No second provisioning: both service identities must inherit access immediately.
+	for (const uid of [999, 998]) await as(uid, 999, `
+		const fs = require('node:fs'); process.umask(0o077);
+		fs.appendFileSync(${JSON.stringify(input)}, '-${uid}');
+		fs.writeFileSync(${JSON.stringify(`${inputs}/output-${uid}`)}, 'output-${uid}');
+	`)
+	assert.equal(await fs.readFile(input, "utf8"), "host-999-998")
+	const relative = "inputs/nested/results/deep/published.csv", published = `${f.workspaceDir}/${relative}`, body = "value\n1\n"
+	await as(998, 999, `
+		(async () => {
+			const assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path');
+			const { Readable } = require('node:stream');
+			const { WorkspaceFiles } = await import(${JSON.stringify(new URL("../lib/workspace-files.js", import.meta.url).href)});
+			let privateChecked = false;
+			const files = await WorkspaceFiles.open({
+				workspaceDir: ${JSON.stringify(f.workspaceDir)}, filesStateDir: ${JSON.stringify(f.storeDir)},
+				filesAgentUids: [999], filesWorkerUids: [997], filesWorkbookWorkerEnabled: false, filesGisWorkerEnabled: false,
+				async filesCheckpoint(stage, operation) {
+					if (stage !== 'staged' || operation.action !== 'upload') return;
+					const candidate = path.join(${JSON.stringify(f.workspaceDir)}, operation.evidence.parentPath, operation.evidence.candidateName);
+					const stat = await fs.stat(candidate);
+					assert.equal(stat.uid, 998); assert.equal(stat.gid, 999);
+					assert.equal(stat.mode & 0o777, 0o600, 'unpublished bytes must remain owner-only despite inherited ACLs');
+					assert.equal(await fs.readFile(candidate, 'utf8'), ${JSON.stringify(body)});
+					await assert.rejects(fs.stat(${JSON.stringify(published)}), { code: 'ENOENT' });
+					privateChecked = true;
+				}
+			}, { info() {}, warn() {}, error() {} });
+			try {
+				const result = await files.upload(Readable.from([${JSON.stringify(body)}]), {
+					operationId: 'host-sharing-publication', path: ${JSON.stringify(relative)}, declaredSize: ${Buffer.byteLength(body)}
+				});
+				assert.equal(result.status, 201); assert.equal(result.operation.state, 'committed');
+				assert.equal(privateChecked, true, 'the real upload must pass through private staging');
+			} finally { await files.close(); }
+		})().catch((error) => { console.error(error); process.exitCode = 1; });
+	`)
+	for (const name of [`${f.workspaceDir}/inputs`, inputs, `${inputs}/results`, `${inputs}/results/deep`]) {
+		const stat = await fs.stat(name)
+		assert.equal(stat.gid, 999); assert.equal(stat.mode & 0o7777, 0o2775)
+		assert.match(acl(name), /default:user:20001:rwx/)
+	}
+	for (const name of [input, published, `${inputs}/output-999`, `${inputs}/output-998`]) {
+		assert.equal((await fs.stat(name)).mode & 0o111, 0)
+		assert.match(acl(name), /user:20001:rwx\s+#effective:rw-/)
+		assert.match(acl(name), /mask::rw-/)
+	}
+	const original = await fs.stat(published), exports = `${f.base}/exports`
+	assert.equal(original.uid, 998); assert.equal(original.gid, 999); assert.equal(original.mode & 0o7777, 0o664)
+	await fs.mkdir(exports, { mode: 0o700 }); await fs.chown(exports, hostUid, hostUid)
+	await as(hostUid, hostUid, `
+		const assert = require('node:assert/strict'), fs = require('node:fs');
+		const file = ${JSON.stringify(published)};
+		assert.equal(fs.readFileSync(file, 'utf8'), ${JSON.stringify(body)});
+		fs.appendFileSync(file, 'host edit\\n');
+		fs.copyFileSync(file, ${JSON.stringify(`${exports}/in-place.csv`)});
+	`)
+	assert.equal((await fs.stat(published)).ino, original.ino, "host in-place editing must not replace the service-owned inode")
+	assert.equal((await fs.stat(published)).uid, 998)
+	await as(hostUid, hostUid, `
+		const fs = require('node:fs'); process.umask(0o077);
+		const file = ${JSON.stringify(published)};
+		fs.writeFileSync(file + '.tmp', 'atomic editor replacement\\n'); fs.renameSync(file + '.tmp', file);
+		fs.copyFileSync(file, ${JSON.stringify(`${exports}/atomic.csv`)});
+		for (const uid of [999, 998]) fs.unlinkSync(${JSON.stringify(`${inputs}/output-`)} + uid);
+		fs.unlinkSync(file); fs.rmdirSync(${JSON.stringify(`${inputs}/results/deep`)}); fs.rmdirSync(${JSON.stringify(`${inputs}/results`)});
+	`)
+	assert.equal(await fs.readFile(`${exports}/in-place.csv`, "utf8"), `${body}host edit\n`)
+	assert.equal(await fs.readFile(`${exports}/atomic.csv`, "utf8"), "atomic editor replacement\n")
+	for (const name of [published, `${inputs}/output-999`, `${inputs}/output-998`, `${inputs}/results`]) await assert.rejects(fs.stat(name), { code: "ENOENT" })
 })
 
 test("inherited raw execute is removed when a shared execute mask would grant it to the wrong principal", options, async (t) => {

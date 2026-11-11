@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import struct
 import tarfile
 import uuid
 
@@ -132,6 +133,85 @@ def drop_acl(fd):
         except OSError as error:
             if error.errno not in (errno.ENODATA, errno.ENOTSUP, errno.EOPNOTSUPP):
                 raise
+
+
+# Linux POSIX ACL xattr ABI: version, then (tag, permissions, numeric identity).
+# Keep these tables aligned with local-workspace.js repair(); never use path ACL tools.
+ACL_ACCESS = 'system.posix_acl_access'
+ACL_DEFAULT = 'system.posix_acl_default'
+ACL_UNDEFINED = 0xffffffff
+
+
+def read_acl(fd, name):
+    try:
+        raw = os.getxattr(fd, name)
+    except OSError as error:
+        if error.errno in (errno.ENODATA, errno.ENOTSUP, errno.EOPNOTSUPP):
+            return None
+        raise
+    if len(raw) < 4 or (len(raw) - 4) % 8 or struct.unpack('<I', raw[:4])[0] != 2:
+        fail('unsafe_workspace', 'Unrecognized Linux POSIX ACL')
+    return [struct.unpack('<HHI', raw[index:index + 8]) for index in range(4, len(raw), 8)]
+
+
+def sharing_acl(uid, mode, *, directory):
+    if directory:
+        owner, host, group, mask, other = 7, 7, 7, 7, 5
+        target = 0o2775
+    else:
+        owner, other = (mode >> 6) & 7, mode & 7
+        host, group = 6 | bool(mode & 0o100), 6 | bool(mode & 0o010)
+        mask = host | group
+        target = (mode & ~0o070) | (mask << 3)
+    return [(1, owner, ACL_UNDEFINED), (2, host, uid), (4, group, ACL_UNDEFINED),
+            (16, mask, ACL_UNDEFINED), (32, other, ACL_UNDEFINED)], target
+
+
+def project_sharing_uid(fd, *, expected_uid=None):
+    """Read-only ordinary-project policy; protected objects still reject every ACL."""
+    access, default = read_acl(fd, ACL_ACCESS), read_acl(fd, ACL_DEFAULT)
+    if access is None and default is None:
+        return None
+    users = [entry[2] for entry in access or [] if entry[0] == 2]
+    if len(users) == 1:
+        uid = users[0]
+        wanted, _ = sharing_acl(uid, 0o2775, directory=True)
+        if (0 < uid < ACL_UNDEFINED and uid not in range(996, 1000)
+                and access == wanted and default == wanted
+                and stat.S_IMODE(os.fstat(fd).st_mode) == 0o2775
+                and (expected_uid is None or str(uid) == str(expected_uid))):
+            return uid
+    fail('unsafe_workspace', 'Project ACL must exactly match the supported host sharing policy and selected UID')
+
+
+def verify_permissions(fd, mode, *, directory, sharing_uid=None, allow_unshared=False):
+    access, default = read_acl(fd, ACL_ACCESS), read_acl(fd, ACL_DEFAULT)
+    observed = stat.S_IMODE(os.fstat(fd).st_mode)
+    if sharing_uid is None or allow_unshared:
+        if observed == mode and access is None and default is None:
+            return mode
+    if sharing_uid is not None:
+        wanted, target = sharing_acl(sharing_uid, mode, directory=directory)
+        if observed == target and access == wanted and default == (wanted if directory else None):
+            return mode
+    fail('manifest_mismatch', 'Tree permissions or ACL changed')
+
+
+def share_created_tree(root, manifest, uid):
+    """Only newly extracted trees below a root-owned 0700 staging parent."""
+    for entry in manifest['entries']:
+        directory = entry['type'] == 'directory'
+        fd = open_relative(root, entry['path'], directory=directory)
+        try:
+            acl, mode = sharing_acl(uid, entry['mode'], directory=directory)
+            raw = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *item) for item in acl)
+            os.setxattr(fd, ACL_ACCESS, raw)
+            if directory:
+                os.setxattr(fd, ACL_DEFAULT, raw)
+            os.fchmod(fd, mode)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 def own_created(fd, *, service_ownership=False):
@@ -291,7 +371,7 @@ def validate_manifest(value):
     return value
 
 
-def capture_fd(root):
+def capture_fd(root, *, permission_check=None):
     entries, metadata = [], {}
     root_mount = mount_id(root)
     def visit(fd, path):
@@ -299,6 +379,8 @@ def capture_fd(root):
         if mount_id(fd) != root_mount:
             fail('unsafe_path', 'Nested mounts are not supported', path=path, path_scope='transfer_source')
         mode = stat.S_IMODE(before.st_mode)
+        if permission_check is not None:
+            mode = permission_check(fd, path, stat.S_ISDIR(before.st_mode))
         entry = {'path': path, 'type': 'directory', 'size': 0, 'mode': mode}
         if stat.S_ISREG(before.st_mode):
             if before.st_nlink != 1:
@@ -347,8 +429,14 @@ def capture_source(path):
         os.close(fd)
 
 
-def verify_tree(fd, manifest, *, service_ownership=False):
-    observed, metadata = capture_fd(fd)
+def verify_tree(fd, manifest, *, service_ownership=False, sharing_uid=None, allow_unshared=False):
+    expected = {entry['path']: entry for entry in manifest['entries']}
+    def check(child, path, directory):
+        if path not in expected or directory != (expected[path]['type'] == 'directory'):
+            fail('manifest_mismatch', 'Tree paths or types changed')
+        return verify_permissions(child, expected[path]['mode'], directory=directory,
+                                  sharing_uid=sharing_uid, allow_unshared=allow_unshared)
+    observed, metadata = capture_fd(fd, permission_check=check if service_ownership else None)
     if observed != manifest or (service_ownership and any(item[4:6] != (999, 999) for item in metadata.values())):
         fail('manifest_mismatch', 'Tree content, permissions, or ownership changed')
 
