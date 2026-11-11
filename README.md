@@ -309,6 +309,9 @@ Disabling provisioning does not undo existing grants or default ACLs. Checked
 imports still grant the already-shared account access when the existing project
 ACL validates. See [local workspace sharing](ENVIRONMENT_VARIABLES.md#local-workspace-sharing)
 for qualification requirements, UID restrictions, and recovery actions.
+Successful sharing is remembered in protected runtime state. Removing its grants
+later makes saved launches and transfers reject the changed permission policy.
+Use the explicit launcher for deliberate re-provisioning, not saved launch.
 
 ### Build the image manually
 

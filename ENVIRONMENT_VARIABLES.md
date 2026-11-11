@@ -194,6 +194,23 @@ the exact supported single-account sharing ACL. They reject custom, partial,
 or conflicting project-root ACLs without repair, even with provisioning disabled.
 Removing a copied entry's sharing ACL, changing unrelated permission bits, or
 changing its bytes or ownership makes its transfer receipt report a modification.
+A root-owned policy record under `.runtime/setup/sharing/` remembers the host UID
+and project identity after successful native provisioning or a shared checked
+import. Removing every project ACL cannot turn a previously shared copy into an
+unchanged unshared copy. Saved launches and transfers reject missing grants or a
+replaced project against this record without repair. Policy persistence failures
+stop native boot before project writers start.
+
+For deliberate sharing recovery, stop the runtime and use the explicit launcher
+without `--require-existing-workspace` to provision the same project again. To
+change host UID, an administrator must first remove the previous account's grants
+throughout the project, then explicitly launch with `--host-uid UID`. Only a
+successful complete provision refreshes the protected policy. This does not
+authorize replacement of a previously recorded project inode. For a full custom
+permission migration, an administrator can deliberately remove the project's
+root-owned policy file while the runtime is stopped. That discards the recorded
+sharing expectation; it is not an opt-out operation or an ordinary file transfer.
+
 Manually installing the supported ACL on a volume is an explicit permission
 choice, not automatic volume sharing.
 Errors identify the affected path and a recovery action:

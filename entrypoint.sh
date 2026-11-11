@@ -1542,6 +1542,19 @@ validate_launch() {
     fi
 }
 
+record_local_workspace_sharing() {
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" "$LOCAL_WORKSPACE_HOST_UID" <<'PY'
+import contextlib
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv[1])
+helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+    workspace.remember_sharing(sys.argv[3], sys.argv[4])
+PY
+}
+
 validate_existing_project() {
     case "$PROJECT_ID" in ''|.|..|.runtime|.ide-state|*/*)
         echo 'The workspace data directory must have a non-reserved name.' >&2; return 2 ;;

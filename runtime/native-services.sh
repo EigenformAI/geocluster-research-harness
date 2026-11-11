@@ -48,6 +48,8 @@ native_main() {
     if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then
         # The provisioner owns root mode/ACL repair, including metadata-noop boots.
         run_local_workspace provision
+        # Persist permission intent before any 998/999 writer can remove ACLs.
+        record_local_workspace_sharing
     else
         chmod 2775 "$WORKSPACE_DIR"
     fi

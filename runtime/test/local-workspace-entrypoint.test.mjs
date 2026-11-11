@@ -28,6 +28,7 @@ ensure_real_dir() { if [ "$1" = "$WORKSPACE_DIR" ]; then echo project; fi; }
 chmod() { if [ "$2" = "$WORKSPACE_DIR" ]; then echo "chmod:$1"; fi; }
 rm() { :; }
 node() { echo native-prepare; exit 0; }
+record_local_workspace_sharing() { echo remember-sharing; }
 `
 	return { root, setup }
 }
@@ -42,7 +43,7 @@ test("native startup provisions sharing before native preparation and writers, w
 	const { setup } = await nativeFixture(t)
 	const result = runNative(`${setup}\nrun_local_workspace() { echo "$1"; }`)
 	assert.equal(result.status, 0, result.stdout + result.stderr)
-	assert.deepEqual(result.stdout.trim().split("\n"), ["validate", "parents", "project", "provision", "native-prepare"])
+	assert.deepEqual(result.stdout.trim().split("\n"), ["validate", "parents", "project", "provision", "remember-sharing", "native-prepare"])
 })
 
 test("native provisioning failure stops before native preparation, writers and shutdown writes", async (t) => {
@@ -73,6 +74,17 @@ native_shutdown() { touch ${JSON.stringify(`${root}/shutdown`)}; }
 		assert.doesNotMatch(result.stdout + result.stderr, /native-prepare|parents|Cannot find module/)
 		for (const name of ["lifecycle-mutation", "shutdown"]) await assert.rejects(fs.stat(`${root}/${name}`), { code: "ENOENT" })
 	}
+})
+
+test("native sharing policy persistence failure stops before native preparation and writers", async (t) => {
+	const { setup } = await nativeFixture(t)
+	const result = runNative(`${setup}
+run_local_workspace() { echo "$1"; }
+record_local_workspace_sharing() { echo policy-write-failed >&2; return 55; }
+`)
+	assert.equal(result.status, 55, result.stdout + result.stderr)
+	assert.match(result.stderr, /policy-write-failed/)
+	assert.doesNotMatch(result.stdout, /native-prepare/)
 })
 
 test("native sharing is revalidated under ownership before protected-parent preparation", async (t) => {
@@ -264,4 +276,41 @@ launch_runtime --runtime-lock-held tui
 	assert.equal(progress(restarted.stdout)?.changed, 0, restarted.stdout)
 	assert.deepEqual(await snapshot(), before)
 	assert.deepEqual(await privateSnapshot(), beforePrivate)
+})
+
+test("saved native restart rejects removal of the established sharing policy before repair", { skip: process.env.LOCAL_WORKSPACE_CONTAINER_TEST !== "1", timeout: 30000 }, async (t) => {
+	const { root } = await nativeFixture(t)
+	const project = path.basename(root), workspace = `/workspace/${project}`, store = `/workspace/.runtime/file-service/${project}`
+	await fs.mkdir(workspace, { recursive: true })
+	await fs.chown(workspace, 999, 999)
+	t.after(() => fs.rm(workspace, { recursive: true, force: true }))
+	t.after(() => fs.rm(store, { recursive: true, force: true }))
+	t.after(() => fs.rm(`/workspace/.runtime/setup/sharing/${project}.json`, { force: true }))
+	const script = `${configuredDefinitions}
+validate_launch() { RUNTIME_PROFILE=native; export RUNTIME_PROFILE; }
+node() { echo native-prepare; exit 0; }
+launch_runtime --runtime-lock-held tui
+`
+	const boot = (required, uid = "20001") => spawnSync("python3", ["-I", `${runtime}/lifecycle-lock.py`, "/workspace", "native", "bash", "-c", script], {
+		env: { PATH: process.env.PATH, PROJECT_ID: project, LOCAL_WORKSPACE_HOST_UID: uid, RUNTIME_REQUIRE_EXISTING_PROJECT: required ? "1" : "0" }, encoding: "utf8", timeout: 10000,
+	})
+	const first = boot(false)
+	assert.equal(first.status, 0, first.stdout + first.stderr)
+	assert.match(await fs.readFile(`/workspace/.runtime/setup/sharing/${project}.json`, "utf8"), /"uid":20001/)
+	const stripped = spawnSync("/usr/bin/setfacl", ["-b", "-k", workspace], { uid: 999, gid: 999, encoding: "utf8" })
+	assert.equal(stripped.status, 0, stripped.stderr)
+	const before = await fs.stat(workspace, { bigint: true })
+	const rejected = boot(true)
+	assert.equal(rejected.status, 2, rejected.stdout + rejected.stderr)
+	assert.match(rejected.stderr, /protected policy/)
+	assert.doesNotMatch(rejected.stdout, /native-prepare/)
+	assert.equal((await fs.stat(workspace, { bigint: true })).ctimeNs, before.ctimeNs)
+	// An explicit provisioning launch is the deliberate recovery path.
+	const recovered = boot(false, "20002")
+	assert.equal(recovered.status, 0, recovered.stdout + recovered.stderr)
+	assert.match(await fs.readFile(`/workspace/.runtime/setup/sharing/${project}.json`, "utf8"), /"uid":20002/)
+	for (const uid of ["20002", ""]) {
+		const relaunched = boot(true, uid)
+		assert.equal(relaunched.status, 0, relaunched.stdout + relaunched.stderr)
+	}
 })

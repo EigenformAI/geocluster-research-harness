@@ -204,6 +204,32 @@ else: raise AssertionError('private staging exposed')
         self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
         self.assertEqual(project.stat().st_ctime_ns, before)
 
+    def test_complete_sharing_removal_cannot_downgrade_import_receipts(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        _, _, header, body = self.source_archive()
+        header['expect'] = 'existing'
+        result = self.success('import', data=self.frame(header, body))
+        self.base.chmod(0o755)
+        attack = '''import os, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+for root, dirs, files in os.walk(p):
+ for acl in ('system.posix_acl_access','system.posix_acl_default'):
+  try: os.removexattr(root,acl)
+  except OSError as e:
+   if e.errno != 61: raise
+ os.chmod(root,0o2775 if pathlib.Path(root)==p else 0o2770)
+ for name in files:
+  f=pathlib.Path(root)/name
+  os.removexattr(f,'system.posix_acl_access'); os.chmod(f,0o660 | (f.stat().st_mode & 0o110))
+'''
+        changed = subprocess.run([sys.executable, '-c', attack, str(project)], user=999, group=999,
+                                 extra_groups=[], capture_output=True)
+        self.assertEqual(changed.returncode, 0, changed.stderr)
+        self.failure('unsafe_workspace', 'receipt', '--operation', result['operation'])
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
+
     def test_image_samples_are_checked_against_provenance_before_copy(self):
         spec = importlib.util.spec_from_file_location('setup_fixture', HELPER)
         module = importlib.util.module_from_spec(spec)
