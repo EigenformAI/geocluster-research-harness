@@ -192,7 +192,11 @@ def verify_permissions(fd, mode, *, directory, sharing_uid=None, allow_unshared=
             return mode
     if sharing_uid is not None:
         wanted, target = sharing_acl(sharing_uid, mode, directory=directory)
-        if observed == target and access == wanted and default == (wanted if directory else None):
+        # The access xattr also sets the mode. A crash can precede installing
+        # the directory's default xattr. This intermediate state is valid only
+        # inside private staging, never for a published receipt.
+        defaults = (None, wanted) if directory and allow_unshared else ((wanted,) if directory else (None,))
+        if observed == target and access == wanted and default in defaults:
             return mode
     fail('manifest_mismatch', 'Tree permissions or ACL changed')
 

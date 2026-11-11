@@ -372,11 +372,13 @@ else: raise AssertionError('private staging exposed')
         record = self.interrupted_samples('staged')
         self.share(self.workspace / 'default')
         stage = self.workspace / '.runtime/setup/staging' / record['operation'] / 'tree'
-        # Stop after only the root's sharing metadata is installed.
+        # Stop between installing access and default ACLs on the first directory.
         fd = transfer.open_absolute(str(stage))
         try:
-            root_manifest = {'entries': [record['manifest']['entries'][0]], 'restricted': []}
-            transfer.share_created_tree(fd, root_manifest, 20001)
+            acl, mode = transfer.sharing_acl(20001, 0o2770, directory=True)
+            raw = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in acl)
+            os.setxattr(fd, transfer.ACL_ACCESS, raw)
+            self.assertEqual(stat.S_IMODE(os.fstat(fd).st_mode), mode)
         finally:
             os.close(fd)
         self.base.chmod(0o755)
