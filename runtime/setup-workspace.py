@@ -418,6 +418,7 @@ class Workspace:
                 transfer.assert_named(stage, 'tree', tree)
                 self.assert_project(record['project'], project)
                 if sharing_uid is not None:
+                    self.remember_sharing(record['project'], sharing_uid)
                     transfer.share_created_tree(tree, record['manifest'], sharing_uid)
                 transfer.verify_tree(tree, record['manifest'], service_ownership=True, sharing_uid=sharing_uid)
                 transfer.assert_named(self.staging, record['operation'], stage)

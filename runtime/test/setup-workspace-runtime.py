@@ -212,6 +212,11 @@ else: raise AssertionError('private staging exposed')
         header['expect'] = 'existing'
         result = self.success('import', data=self.frame(header, body))
         self.base.chmod(0o755)
+        self.remove_sharing_as_service(project)
+        self.failure('unsafe_workspace', 'receipt', '--operation', result['operation'])
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
+
+    def remove_sharing_as_service(self, project):
         attack = '''import os, pathlib, sys
 p=pathlib.Path(sys.argv[1])
 for root, dirs, files in os.walk(p):
@@ -227,8 +232,6 @@ for root, dirs, files in os.walk(p):
         changed = subprocess.run([sys.executable, '-c', attack, str(project)], user=999, group=999,
                                  extra_groups=[], capture_output=True)
         self.assertEqual(changed.returncode, 0, changed.stderr)
-        self.failure('unsafe_workspace', 'receipt', '--operation', result['operation'])
-        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
 
     def test_image_samples_are_checked_against_provenance_before_copy(self):
         spec = importlib.util.spec_from_file_location('setup_fixture', HELPER)
@@ -414,10 +417,51 @@ for root, dirs, files in os.walk(p):
             self.assertNotEqual(probe.returncode, 0)
         result = self.success('prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
         self.assertEqual((result['state'], result['outcome']), ('verified', 'unchanged'))
+        receipt = self.workspace / '.runtime/setup/receipts' / (record['operation'] + '.json')
+        verified = json.loads(receipt.read_text())
+        self.assertEqual(verified['manifest'], record['manifest'])
+        self.assertEqual(verified['manifestHash'], record['manifestHash'])
         probe = subprocess.run([sys.executable, '-c', 'import pathlib,sys; assert pathlib.Path(sys.argv[1]).read_bytes()',
                                 str(self.workspace / 'default/wattle-creek/drilling/assays.csv')],
                                user=20001, group=20001, extra_groups=[], capture_output=True)
         self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.remove_sharing_as_service(self.workspace / 'default')
+        self.failure('unsafe_workspace', 'receipt', '--operation', record['operation'])
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+
+    def test_resumed_sharing_policy_write_failure_keeps_stage_private_and_recoverable(self):
+        record = self.interrupted_samples('staged')
+        self.share(self.workspace / 'default')
+        stage = self.workspace / '.runtime/setup/staging' / record['operation'] / 'tree'
+        before = transfer.capture_source(stage)
+        receipt = self.workspace / '.runtime/setup/receipts' / (record['operation'] + '.json')
+        original_receipt = receipt.read_bytes()
+        # Fail the actual create-only policy commit, not sharing or publication.
+        program = '''import errno,importlib.util,json,os,sys
+sys.path.insert(0,os.path.dirname(sys.argv[1]))
+s=importlib.util.spec_from_file_location('setup',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+original=m.transfer.rename_noreplace
+def rename(source,name,destination,target):
+ if target=='default.json': raise OSError(errno.ENOSPC,'policy storage full')
+ return original(source,name,destination,target)
+m.transfer.rename_noreplace=rename
+sys.argv=sys.argv[1:]
+try: print(json.dumps(m.main()))
+except OSError as error:
+ print(json.dumps({'error':'io_error','message':str(error)}),file=sys.stderr); sys.exit(2)
+'''
+        self.failure('io_error', 'prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'], program=program)
+        self.assertFalse((self.workspace / 'default/wattle-creek').exists())
+        self.assertEqual(receipt.read_bytes(), original_receipt)
+        self.assertEqual(transfer.capture_source(stage), before)
+        self.base.chmod(0o755)
+        for uid in (999, 20001):
+            probe = subprocess.run([sys.executable, '-c', 'import os,sys; os.listdir(sys.argv[1])', str(stage)],
+                                   user=uid, group=uid, extra_groups=[], capture_output=True)
+            self.assertNotEqual(probe.returncode, 0)
+        result = self.success('prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+        self.assertEqual((result['state'], result['outcome']), ('verified', 'unchanged'))
+        self.assertEqual(result['manifestHash'], record['manifestHash'])
 
     def test_publication_without_verified_receipt_is_never_promoted(self):
         for state in ('uncertain', 'published'):
