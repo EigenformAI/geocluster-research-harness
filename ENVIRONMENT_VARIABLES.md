@@ -228,6 +228,10 @@ filesystem, project, content, and grants. Retain a copy of that one policy recor
 for inspection. Only then deliberately remove that record and explicitly
 provision the intended workspace again. This discards its old identity
 expectation. Do not remove the entire sharing, setup, or runtime directory.
+Existing transfer receipts retain their original identities and hashes. Removing
+the policy record does not repair those receipts. They can still report a
+modification after a filesystem identity change. Use fresh destinations for new
+copies rather than rewriting receipt history.
 
 A private stage partly shared to the previous UID is not resumable after a
 deliberate host UID change. The helper does not strip or rewrite those old ACLs
