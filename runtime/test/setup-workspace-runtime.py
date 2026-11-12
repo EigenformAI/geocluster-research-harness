@@ -233,6 +233,23 @@ for root, dirs, files in os.walk(p):
                                  extra_groups=[], capture_output=True)
         self.assertEqual(changed.returncode, 0, changed.stderr)
 
+    def test_missing_shared_project_is_not_recreated_before_policy_rejection(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        self.success('prepare', '--project', 'default', '--expect', 'existing', '--samples')
+        policy = self.workspace / '.runtime/setup/sharing/default.json'
+        original_policy = policy.read_bytes()
+        shutil.rmtree(project)
+        before = self.workspace.stat()
+        response = self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'absent')
+        self.assertFalse(project.exists())
+        after = self.workspace.stat()
+        self.assertEqual((after.st_mtime_ns, after.st_ctime_ns), (before.st_mtime_ns, before.st_ctime_ns))
+        self.assertEqual(policy.read_bytes(), original_policy)
+        self.assertIn(str(policy), response['message'])
+        self.assertIn('trusted administrator migration', response['message'])
+
     def test_image_samples_are_checked_against_provenance_before_copy(self):
         spec = importlib.util.spec_from_file_location('setup_fixture', HELPER)
         module = importlib.util.module_from_spec(spec)

@@ -194,7 +194,13 @@ class Workspace:
         record = self.sharing_policy(project)
         uid = transfer.project_sharing_uid(fd)
         if record is not None and record != dict(retained_identity(fd), uid=uid):
-            transfer.fail('unsafe_workspace', 'Project identity or host sharing grant differs from its protected policy; use explicit provisioning for deliberate permission changes')
+            self.fail_sharing_policy(project, 'Project identity or host sharing grant differs from its protected policy')
+
+    def fail_sharing_policy(self, project, message):
+        path = os.path.join(self.path, '.runtime', 'setup', 'sharing', project + '.json')
+        transfer.fail('unsafe_workspace', message + '; protected policy record: ' + path
+                      + '. Restore the recorded project and grants, or use explicit provisioning for deliberate same-project permission changes.'
+                      + ' For a trusted administrator migration, stop the runtime, verify the intended filesystem and project, then deliberately remove only this record before explicit provisioning.')
 
     def assert_provisioning_identity(self, project):
         """Allow deliberate UID recovery, never mutate a replacement project."""
@@ -204,11 +210,11 @@ class Workspace:
         try:
             fd = transfer.open_child(self.root, project, directory=True)
         except FileNotFoundError:
-            transfer.fail('unsafe_workspace', 'Previously shared project is missing; retain its protected policy for inspection')
+            self.fail_sharing_policy(project, 'Previously shared project is missing')
         try:
             current = retained_identity(fd)
             if any(record[key] != current[key] for key in ('device', 'inode')):
-                transfer.fail('unsafe_workspace', 'Previously shared project identity changed; provisioning cannot repair a replacement')
+                self.fail_sharing_policy(project, 'Previously shared project identity changed; provisioning cannot repair a replacement')
             transfer.assert_named(self.root, project, fd)
         finally:
             os.close(fd)
@@ -232,7 +238,7 @@ class Workspace:
             previous = self.sharing_policy(project)
             record = dict(retained_identity(fd), uid=observed)
             if previous is not None and any(previous[key] != record[key] for key in ('device', 'inode')):
-                transfer.fail('unsafe_workspace', 'Previously shared project identity changed; retain it for inspection')
+                self.fail_sharing_policy(project, 'Previously shared project identity changed; retain it for inspection')
             transfer.assert_named(self.root, project, fd)
             if previous == record:
                 return
@@ -266,6 +272,8 @@ class Workspace:
                 transfer.fail('project_missing', 'Selected project is missing', project=project)
             if expect is None:
                 return None, False
+            if self.sharing_policy(project) is not None:
+                self.fail_sharing_policy(project, 'Previously shared project is missing; preparation cannot recreate it')
             os.mkdir(project, 0o700, dir_fd=self.root)
             fd = transfer.open_child(self.root, project, directory=True)
             transfer.drop_acl(fd)

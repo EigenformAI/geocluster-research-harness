@@ -165,6 +165,11 @@ with GID 999. The project root is agent-owned. `/workspace`, private transfer
 staging, and private `.runtime` state remain protected and receive no host grants.
 `datasets`, `_orchestrator`, reserved paths, nested mounts, hardlinks, special
 objects, and explicitly private entries are excluded.
+The protected workspace root must already have UID 0, GID 0, and no group or
+other write bits, normally mode `0755`. Explicit launches and direct-container
+integrations validate this requirement even when sharing is disabled. They do
+not repair an invalid protected root. Native commands use the fixed `default`
+project, not arbitrary `PROJECT_ID` values.
 
 Checked setup samples and imports are immediately accessible to the existing
 shared host account when the project carries the exact supported access and
@@ -211,6 +216,28 @@ that identity before any project permission repair or grant. For a full custom
 permission migration, an administrator can deliberately remove the project's
 root-owned policy file while the runtime is stopped. That discards the recorded
 sharing expectation; it is not an opt-out operation or an ordinary file transfer.
+
+Protected project identity includes both the filesystem device number and inode.
+Device numbers on filesystems such as btrfs or ZFS can change after a remount or
+host reboot. An unchanged project can then be rejected as a different identity.
+The checks remain strict: an inode number alone cannot distinguish a replacement
+on another filesystem. Actual btrfs and ZFS behavior is not qualified here.
+The error names `.runtime/setup/sharing/PROJECT.json` within the workspace.
+For a trusted administrator migration, stop the runtime and verify the intended
+filesystem, project, content, and grants. Retain a copy of that one policy record
+for inspection. Only then deliberately remove that record and explicitly
+provision the intended workspace again. This discards its old identity
+expectation. Do not remove the entire sharing, setup, or runtime directory.
+
+A private stage partly shared to the previous UID is not resumable after a
+deliberate host UID change. The helper does not strip or rewrite those old ACLs
+without trusted staged policy. Keep that stage and its receipt for inspection.
+Import the original source to a fresh destination with `workspace-files.sh`.
+For samples, the public `setup-workspace.py prepare --samples --destination NAME`
+option selects a fresh child name instead of resuming the old default sample
+receipt. Run this helper through the workspace lifecycle lock, as for other
+mutating setup operations. Do not delete broad private directories or edit
+receipts to force recovery.
 
 Manually installing the supported ACL on a volume is an explicit permission
 choice, not automatic volume sharing.

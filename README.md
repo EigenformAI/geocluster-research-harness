@@ -268,6 +268,10 @@ sudo install -d -o root -g root -m 0755 "$workspace"
 Your data and results live in `$workspace/default/` on the Docker host. Put data
 folders there, not beside `default/`. Conversations and provider connections are
 kept separately under `$workspace/.runtime/`.
+The workspace root must remain owned by UID 0 and GID 0, without group or other
+write permission, normally mode `0755`. Explicit launches, direct-container
+integrations, and sharing opt-out validate this protected root rather than repair
+its ownership. Native commands use the fixed `default` project.
 
 Qualified local rootful Linux bind mounts automatically share ordinary project
 content with the account invoking the launcher. Startup reports the selected UID
@@ -312,6 +316,14 @@ for qualification requirements, UID restrictions, and recovery actions.
 Successful sharing is remembered in protected runtime state. Removing its grants
 later makes saved launches and transfers reject the changed permission policy.
 Use the explicit launcher for deliberate re-provisioning, not saved launch.
+Protected identity includes the filesystem device number and project inode.
+A remount or host reboot can change device numbers on filesystems such as btrfs
+or ZFS, causing rejection even when the project is unchanged. This remains a
+fail-closed limitation, not qualified support for those filesystems. See the
+linked recovery guidance before any trusted administrator migration.
+Partly shared private stages cannot resume after changing the host UID. Keep the
+old stage for inspection and make a fresh import or sample copy at a new
+destination. Do not clear private runtime state to make resume pass.
 
 ### Build the image manually
 

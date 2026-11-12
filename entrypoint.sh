@@ -1549,9 +1549,13 @@ import runpy
 import sys
 
 sys.path.insert(0, sys.argv[1])
-helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
-with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
-    workspace.assert_provisioning_identity(sys.argv[3])
+try:
+    helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+    with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+        workspace.assert_provisioning_identity(sys.argv[3])
+except (ValueError, OSError, UnicodeError, RecursionError) as error:
+    print('Native workspace identity validation failed: ' + str(error), file=sys.stderr)
+    sys.exit(2)
 PY
 }
 
@@ -1562,9 +1566,13 @@ import runpy
 import sys
 
 sys.path.insert(0, sys.argv[1])
-helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
-with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
-    workspace.remember_sharing(sys.argv[3], sys.argv[4])
+try:
+    helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+    with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+        workspace.remember_sharing(sys.argv[3], sys.argv[4])
+except (ValueError, OSError, UnicodeError, RecursionError) as error:
+    print('Native workspace sharing policy failed: ' + str(error), file=sys.stderr)
+    sys.exit(2)
 PY
 }
 

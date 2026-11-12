@@ -88,6 +88,29 @@ record_local_workspace_sharing() { echo policy-write-failed >&2; return 55; }
 	assert.doesNotMatch(result.stdout, /native-prepare/)
 })
 
+test("native protected workspace helper failures are concise setup errors", async (t) => {
+	await fs.mkdir("/tmp/opencode", { recursive: true })
+	const root = await fs.mkdtemp("/tmp/opencode/native-policy-errors-")
+	t.after(() => fs.rm(root, { recursive: true, force: true }))
+	for (const [helper, prefix] of [
+		["check_recorded_project_identity", "Native workspace identity validation failed:"],
+		["record_local_workspace_sharing", "Native workspace sharing policy failed:"],
+	]) {
+		const script = `${configuredDefinitions.replaceAll("/usr/bin/python3", "python3")}
+WORKSPACE_DIR=${JSON.stringify(`${root}/default`)}
+PROJECT_ID=default
+LOCAL_WORKSPACE_HOST_UID=20001
+${helper}
+`
+		const result = spawnSync("bash", ["-c", script], { env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10000 })
+		assert.equal(result.status, 2, result.stdout + result.stderr)
+		assert.ok(result.stderr.startsWith(prefix), result.stderr)
+		assert.doesNotMatch(result.stderr, /Traceback|File ".*", line/)
+		assert.equal(result.stdout, "")
+		assert.deepEqual(await fs.readdir(root), [])
+	}
+})
+
 test("native sharing is revalidated under ownership before protected-parent preparation", async (t) => {
 	const { setup } = await nativeFixture(t)
 	const result = runNative(`${setup}
@@ -306,7 +329,11 @@ launch_runtime --runtime-lock-held tui
 	await fs.chmod(workspace, 0o2770)
 	const replacement = await fs.stat(workspace, { bigint: true })
 	const replacementStart = boot(false)
-	assert.notEqual(replacementStart.status, 0)
+	assert.equal(replacementStart.status, 2, replacementStart.stdout + replacementStart.stderr)
+	assert.match(replacementStart.stderr, /Native workspace identity validation failed:/)
+	assert.match(replacementStart.stderr, /protected policy record: .*\.runtime\/setup\/sharing\//)
+	assert.match(replacementStart.stderr, /trusted administrator migration/)
+	assert.doesNotMatch(replacementStart.stderr, /Traceback/)
 	assert.doesNotMatch(replacementStart.stdout, /\[workspace\]|native-prepare/)
 	assert.equal((await fs.stat(workspace, { bigint: true })).ctimeNs, replacement.ctimeNs)
 	assert.equal((await fs.stat(workspace, { bigint: true })).mode, replacement.mode)
