@@ -168,8 +168,10 @@ objects, and explicitly private entries are excluded.
 The protected workspace root must already have UID 0, GID 0, and no group or
 other write bits, normally mode `0755`. Explicit launches and direct-container
 integrations validate this requirement even when sharing is disabled. They do
-not repair an invalid protected root. Native commands use the fixed `default`
-project, not arbitrary `PROJECT_ID` values.
+not repair an invalid protected root. The packaged native host commands select
+the fixed `default` project and expose no project override. This is a host-command
+restriction, not a rejection of all custom direct-container `PROJECT_ID` values.
+Direct startup still validates its selected project name and protected identity.
 
 Checked setup samples and imports are immediately accessible to the existing
 shared host account when the project carries the exact supported access and

@@ -271,7 +271,10 @@ kept separately under `$workspace/.runtime/`.
 The workspace root must remain owned by UID 0 and GID 0, without group or other
 write permission, normally mode `0755`. Explicit launches, direct-container
 integrations, and sharing opt-out validate this protected root rather than repair
-its ownership. Native commands use the fixed `default` project.
+its ownership. The packaged native host commands select the fixed `default`
+project and expose no project override. Custom direct-container settings are
+outside that fixed-project launcher boundary and still require project-name and
+protected-identity validation.
 
 Qualified local rootful Linux bind mounts automatically share ordinary project
 content with the account invoking the launcher. Startup reports the selected UID
