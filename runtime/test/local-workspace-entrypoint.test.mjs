@@ -225,28 +225,34 @@ main
 })
 
 test("native protected-ancestor ACL rejection precedes lifecycle setup and under-lock parent repair", { skip: process.env.LOCAL_WORKSPACE_CONTAINER_TEST !== "1" }, async (t) => {
-	const { root } = await nativeFixture(t)
-	await fs.mkdir("/workspace", { recursive: true })
-	const acl = () => spawnSync("/usr/bin/getfacl", ["-cpn", "--", "/workspace"], { encoding: "utf8" }).stdout
-	const original = acl()
-	t.after(() => {
-		const restored = spawnSync("/usr/bin/setfacl", ["--restore=-"], { input: `# file: /workspace\n${original}`, encoding: "utf8" })
-		assert.equal(restored.status, 0, restored.stderr)
-	})
-	const set = spawnSync("/usr/bin/setfacl", ["-m", "d:u:20001:r-x", "--", "/workspace"], { encoding: "utf8" })
+	await fs.mkdir("/workspace/.runtime/file-service", { recursive: true })
+	const root = await fs.mkdtemp("/workspace/.runtime/file-service/local-native-ancestor-")
+	t.after(() => fs.rm(root, { recursive: true, force: true }))
+	// FILES_STATE_DIR is already configurable: poison only this fixture's ancestor,
+	// never /workspace, where sibling test files create their own protected stores.
+	const ancestor = `${root}/nested`, store = `${ancestor}/store`
+	await fs.mkdir(store, { recursive: true })
+	const acl = () => {
+		const result = spawnSync("/usr/bin/getfacl", ["-cpn", "--", ancestor], { encoding: "utf8" })
+		assert.equal(result.status, 0, result.stderr)
+		return result.stdout
+	}
+	const set = spawnSync("/usr/bin/setfacl", ["-m", "d:u:20001:r-x", "--", ancestor], { encoding: "utf8" })
 	assert.equal(set.status, 0, set.stderr)
-	const before = await fs.stat("/workspace", { bigint: true }), beforeAcl = acl()
+	const before = await fs.stat(ancestor, { bigint: true }), beforeAcl = acl()
 	const script = `${configuredDefinitions}
 validate_launch() { RUNTIME_PROFILE=native; export RUNTIME_PROFILE; }
 exec() { touch ${JSON.stringify(`${root}/lifecycle-mutation`)}; exit 77; }
+check_recorded_project_identity() { :; }
 prepare_protected_parents() { touch ${JSON.stringify(`${root}/parent-mutation`)}; exit 78; }
 `
 	for (const invocation of ["launch_runtime tui", "launch_runtime --runtime-lock-held tui 9</dev/null"]) {
-		const result = runNative(script, {}, invocation)
+		const result = runNative(script, { FILES_STATE_DIR: store }, invocation)
 		assert.equal(result.status, 1, result.stdout + result.stderr)
 		assert.match(result.stderr, /ancestor_acl/)
+		assert.ok(result.stderr.includes(ancestor), result.stderr)
 		assert.equal(acl(), beforeAcl)
-		assert.equal((await fs.stat("/workspace", { bigint: true })).ctimeNs, before.ctimeNs)
+		assert.equal((await fs.stat(ancestor, { bigint: true })).ctimeNs, before.ctimeNs)
 		for (const name of ["lifecycle-mutation", "parent-mutation"]) await assert.rejects(fs.stat(`${root}/${name}`), { code: "ENOENT" })
 	}
 })
