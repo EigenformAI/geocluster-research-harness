@@ -97,8 +97,19 @@ def parse_json(raw, *, maximum=LIMIT, label='settings or Docker metadata'):
     if len(raw) > maximum:
         raise SetupError(label[0].upper() + label[1:] + ' exceed the supported size.')
     try:
-        return json.loads(raw, object_pairs_hook=_object,
-                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError('non-finite JSON')))
+        value = json.loads(raw, object_pairs_hook=_object,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError('non-finite JSON')))
+        pending = [value]
+        while pending:
+            item = pending.pop()
+            if isinstance(item, str):
+                item.encode('utf-8')
+            elif isinstance(item, list):
+                pending.extend(item)
+            elif isinstance(item, dict):
+                pending.extend(item)
+                pending.extend(item.values())
+        return value
     except (ValueError, UnicodeError, RecursionError) as error:
         raise SetupError('Could not read valid JSON ' + label + '.') from error
 

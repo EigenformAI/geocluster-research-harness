@@ -33,6 +33,17 @@ class FakeDocker(common.Docker):
 
 
 class CommonTests(unittest.TestCase):
+    def test_json_requires_unicode_scalars_in_all_strings_and_keys(self):
+        valid = {'\U0001f600': ['\U0001f600', {'ignored': '\U0001f600'}]}
+        for raw in (json.dumps(valid).encode(), json.dumps(valid, ensure_ascii=False).encode()):
+            self.assertEqual(common.parse_json(raw), valid)
+        for raw in (b'"\\ud800"', b'{"ignored":"\\udfff"}', b'{"\\ud800":0}',
+                    b'{"nested":[{"ignored":"\\ud800"}]}', b'{"nested":[{"\\udfff":0}]}'):
+            for maximum in (65536, 16 * 1024 * 1024):
+                with self.subTest(raw=raw, maximum=maximum):
+                    with self.assertRaisesRegex(common.SetupError, 'Could not read valid JSON'):
+                        common.parse_json(raw, maximum=maximum)
+
     def test_workspace_responses_have_a_separate_bounded_budget(self):
         docker = object.__new__(common.Docker)
         docker.check = lambda: None
@@ -278,7 +289,7 @@ class CommonTests(unittest.TestCase):
 
     def test_runtime_transfer_errors_share_safe_formatting_and_hide_stderr(self):
         docker = object.__new__(common.Docker)
-        path = 'work/café\n\x1b[2J\udcff'
+        path = 'work/café\n\x1b[2J\U0001f600'
         payload = {'error': 'unsafe_path', 'message': 'Symbolic links are not supported.',
                    'path': path, 'entry_type': 'symlink', 'hint': 'Use a separate copy.',
                    'path_scope': 'transfer_source'}
@@ -294,11 +305,22 @@ class CommonTests(unittest.TestCase):
         self.assertIn('relative to transfer source', message)
         self.assertNotIn('Source folder:', message)
         self.assertIn('café', message)
-        self.assertIn(r'\n\x1b[2J\udcff', message)
+        self.assertIn(r'\n\x1b[2J', message)
+        self.assertIn('\U0001f600', message)
         self.assertIn(payload['message'], message)
         self.assertIn(payload['hint'], message)
         self.assertNotIn('secret', message)
         self.assertNotIn('private-host', message)
+
+        payload['path'] = 'work/\udcff'
+        invalid = subprocess.CompletedProcess([], 1, b'',
+            b'connection: ssh://user:secret@private-host\n' + json.dumps(payload).encode())
+        with patch.object(common.subprocess, 'run', return_value=invalid):
+            with self.assertRaises(common.SetupError) as caught:
+                docker._run(['run'])
+        self.assertEqual(caught.exception.code, 'docker_failed')
+        self.assertNotIn('secret', str(caught.exception))
+        self.assertNotIn('private-host', str(caught.exception))
 
     def test_private_workspace_path_is_not_presented_as_an_import_source(self):
         docker = object.__new__(common.Docker)

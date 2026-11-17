@@ -23,13 +23,16 @@ def main():
     if any(arg == '--project' or arg.startswith('--project=') for arg in args):
         raise UsageError('--project has been removed; native commands use one workspace. Select its storage with --workspace-volume or --workspace-root.')
     volume, root, container = "geocluster-native-workspace", None, None
-    while args and args[0] in ("--workspace-volume", "--workspace-root", "--container"):
-        if len(args) < 2:
-            raise ValueError(f"{args[0]} requires a value")
-        key, value = args[:2]
+    while args and args[0].split("=", 1)[0] in ("--workspace-volume", "--workspace-root", "--container"):
+        key, equals, value = args[0].partition("=")
+        if equals:
+            args = args[1:]
+        else:
+            if len(args) < 2:
+                raise ValueError(f"{key} requires a value")
+            value, args = args[1], args[2:]
         if not value:
             raise UsageError(f"{key} requires a nonempty value")
-        args = args[2:]
         if key == "--workspace-volume": volume, root = value, None
         elif key == "--workspace-root": root = str(Path(value).resolve(strict=True))
         else: container = value
