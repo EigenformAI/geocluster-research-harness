@@ -1,8 +1,8 @@
 """Create-only, descriptor-relative transfers shared by setup and the host client.
 
 Archives are uncompressed USTAR with 10240-byte records: the first member is a
-bounded JSON manifest, followed by exactly its sorted members. No tar extraction
-API is used.
+bounded JSON manifest, followed by its root directory and lexically sorted
+non-root members. No tar extraction API is used.
 """
 import ctypes
 import errno
@@ -337,6 +337,10 @@ def restricted_entry(entry):
     return not mode & 0o040
 
 
+def manifest_path_key(path):
+    return (path != '.', path)
+
+
 def validate_manifest(value):
     if not isinstance(value, dict) or set(value) != {'entries', 'restricted'} or not isinstance(value['entries'], list) or not isinstance(value['restricted'], list):
         fail('invalid_manifest', 'Expected entries and restricted arrays')
@@ -362,8 +366,8 @@ def validate_manifest(value):
             fail('invalid_manifest', 'Invalid SHA-256 digest')
         seen[path] = entry
         paths.append(path)
-    if paths != sorted(paths) or paths[0] != '.':
-        fail('invalid_manifest', 'Manifest must contain a root and sorted unique paths')
+    if paths[0] != '.' or paths != sorted(paths, key=manifest_path_key):
+        fail('invalid_manifest', 'Manifest must contain a root first and sorted unique non-root paths')
     for path in paths[1:]:
         parent = path.rsplit('/', 1)[0] if '/' in path else '.'
         if parent not in seen or seen[parent]['type'] != 'directory':
@@ -420,7 +424,7 @@ def capture_fd(root, *, permission_check=None):
         if len(entries) > MAX_ENTRIES:
             fail('invalid_manifest', 'Tree exceeds the member count limit')
     visit(root, '.')
-    entries.sort(key=lambda entry: entry['path'])
+    entries.sort(key=lambda entry: manifest_path_key(entry['path']))
     manifest = {'entries': entries, 'restricted': [entry['path'] for entry in entries if restricted_entry(entry)]}
     return validate_manifest(manifest), metadata
 

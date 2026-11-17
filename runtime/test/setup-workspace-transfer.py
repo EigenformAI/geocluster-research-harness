@@ -17,6 +17,88 @@ import setup_transfer as transfer
 
 
 class TransferTests(unittest.TestCase):
+    def test_root_first_punctuation_tree_round_trip_is_create_only(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root, 'source')
+            source.mkdir(mode=0o755)
+            (source / 'a').mkdir(mode=0o755)
+            source.chmod(0o755)
+            (source / 'a').chmod(0o755)
+            files = {
+                ' notes.txt': (b'leading space\x00\xff', 0o640),
+                '!notes.txt': (b'important notes\n', 0o644),
+                '-assays.csv': (b'hole,value\nA,17\n', 0o600),
+                'a/!nested.txt': (b'nested punctuation', 0o751),
+                'a/ordinary.txt': (b'nested ordinary', 0o644),
+                'a!sibling.txt': (b'sorts before a descendants', 0o644),
+                'notes.txt': (b'ordinary control', 0o644),
+            }
+            for name, (data, mode) in files.items():
+                (source / name).write_bytes(data)
+                (source / name).chmod(mode)
+            expected_paths = ['.', ' notes.txt', '!notes.txt', '-assays.csv', 'a',
+                              'a!sibling.txt', 'a/!nested.txt', 'a/ordinary.txt', 'notes.txt']
+            manifest = transfer.capture_source(source)
+            self.assertEqual([entry['path'] for entry in manifest['entries']], expected_paths)
+            self.assertEqual(manifest['restricted'], ['-assays.csv'])
+            archive = io.BytesIO()
+            transfer.build_archive(source, manifest, archive)
+            archive.seek(0)
+            with tarfile.open(fileobj=archive, mode='r:') as tar:
+                self.assertEqual(tar.getnames(), [transfer.MANIFEST_NAME, *expected_paths])
+            archive.seek(0)
+            transfer.safe_extract(archive, root, 'copy')
+            copied = Path(root, 'copy')
+            self.assertEqual(transfer.capture_source(copied), manifest)
+            # A credible but unsafe workaround would permit replacement on retry.
+            (copied / '!notes.txt').write_bytes(b'user edit retained')
+            archive.seek(0)
+            with self.assertRaises(transfer.TransferError) as raised:
+                transfer.safe_extract(archive, root, 'copy')
+            self.assertEqual(raised.exception.code, 'destination_exists')
+            self.assertEqual((copied / '!notes.txt').read_bytes(), b'user edit retained')
+            for name, (data, mode) in files.items():
+                self.assertEqual((source / name).read_bytes(), data)
+                self.assertEqual((source / name).stat().st_mode & 0o7777, mode)
+
+    def test_invalid_root_order_parent_and_member_manifests_cannot_publish(self):
+        def directory(path):
+            return {'path': path, 'type': 'directory', 'size': 0, 'mode': 0o755}
+        def file(path):
+            return {'path': path, 'type': 'file', 'size': 0, 'mode': 0o644,
+                    'sha256': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}
+        variants = {
+            'duplicate root': [directory('.'), directory('.')],
+            'duplicate child': [directory('.'), file('!notes.txt'), file('!notes.txt')],
+            'missing root': [file('!notes.txt')],
+            'late root': [file('!notes.txt'), directory('.')],
+            'file root': [file('.')],
+            'unsorted children': [directory('.'), file('-assays.csv'), file('!notes.txt')],
+            'depth first not lexical': [directory('.'), directory('a'), file('a/child'), file('a!sibling')],
+            'missing parent': [directory('.'), file('!missing/child')],
+            'file parent': [directory('.'), file('!parent'), file('!parent/child')],
+            'unknown field': [dict(directory('.'), unexpected=True)],
+            'boolean mode': [dict(directory('.'), mode=True)],
+            'invalid digest': [directory('.'), dict(file('!notes.txt'), sha256='not-a-digest')],
+        }
+        with tempfile.TemporaryDirectory() as root:
+            for label, entries in variants.items():
+                with self.subTest(case=label):
+                    manifest = {'entries': entries, 'restricted': []}
+                    archive = io.BytesIO()
+                    # Construct untrusted input without the product's writer or validator.
+                    with tarfile.open(fileobj=archive, mode='w', format=tarfile.USTAR_FORMAT) as tar:
+                        raw = json.dumps(manifest).encode()
+                        item = tarfile.TarInfo(transfer.MANIFEST_NAME)
+                        item.mode, item.size = 0o600, len(raw)
+                        tar.addfile(item, io.BytesIO(raw))
+                    archive.seek(0)
+                    with self.assertRaises(transfer.TransferError) as raised:
+                        transfer.safe_extract(archive, root, 'copy')
+                    self.assertEqual(raised.exception.code, 'invalid_manifest')
+                    self.assertFalse(Path(root, 'copy').exists())
+                    self.assertEqual(list(Path(root).iterdir()), [])
+
     def test_nested_unsupported_entries_have_observed_types_and_full_paths(self):
         for kind in ('file-link', 'directory-link', 'dangling-link', 'fifo', 'socket', 'hardlink'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as root:

@@ -71,6 +71,9 @@ class RuntimeTests(unittest.TestCase):
         (source / 'folder').mkdir(mode=0o755)
         (source / 'folder/input').write_bytes(b'approved personal bytes\x00\xff')
         (source / 'folder/input').chmod(0o4751 if private else 0o4750)
+        for name in ('!notes.txt', '-assays.csv', ' leading-space.txt', 'folder/!nested.txt'):
+            (source / name).write_bytes(('ordinary filename: ' + name).encode())
+            (source / name).chmod(0o640)
         if private:
             source.chmod(0o700)
             (source / 'secret').write_text('private')
@@ -326,7 +329,11 @@ for root, dirs, files in os.walk(p):
         self.assertEqual(exported.returncode, 0, exported.stderr)
         self.assertEqual(exported.stderr, b'')
         transfer.safe_extract(io.BytesIO(exported.stdout), str(self.base), 'export')
-        self.assertEqual((self.base / 'export/folder/input').read_bytes(), (source / 'folder/input').read_bytes())
+        for entry in manifest['entries']:
+            original = source / entry['path']
+            self.assertEqual(stat.S_IMODE(original.stat().st_mode), entry['mode'])
+            if entry['type'] == 'file':
+                self.assertEqual((self.base / 'export' / entry['path']).read_bytes(), original.read_bytes())
         self.assertEqual(self.success('receipt', '--operation', result['operation'])['outcome'], 'unchanged')
 
     def test_host_export_uses_callers_group_not_destination_setgid(self):
