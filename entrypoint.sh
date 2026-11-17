@@ -1542,6 +1542,40 @@ validate_launch() {
     fi
 }
 
+check_recorded_project_identity() {
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" <<'PY'
+import contextlib
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv[1])
+try:
+    helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+    with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+        workspace.assert_provisioning_identity(sys.argv[3])
+except (ValueError, OSError, UnicodeError, RecursionError) as error:
+    print('Native workspace identity validation failed: ' + str(error), file=sys.stderr)
+    sys.exit(2)
+PY
+}
+
+record_local_workspace_sharing() {
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" "$LOCAL_WORKSPACE_HOST_UID" <<'PY'
+import contextlib
+import runpy
+import sys
+
+sys.path.insert(0, sys.argv[1])
+try:
+    helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
+    with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
+        workspace.remember_sharing(sys.argv[3], sys.argv[4])
+except (ValueError, OSError, UnicodeError, RecursionError) as error:
+    print('Native workspace sharing policy failed: ' + str(error), file=sys.stderr)
+    sys.exit(2)
+PY
+}
+
 validate_existing_project() {
     case "$PROJECT_ID" in ''|.|..|.runtime|.ide-state|*/*)
         echo 'The workspace data directory must have a non-reserved name.' >&2; return 2 ;;
@@ -1556,7 +1590,7 @@ validate_existing_project() {
         return 2
     fi
     # Reuse setup's held-descriptor validation, not native startup's permission repair.
-    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" <<'PY'
+    /usr/bin/python3 -IB - "$RUNTIME_CODE_DIR" "${WORKSPACE_DIR%/*}" "$PROJECT_ID" "${LOCAL_WORKSPACE_HOST_UID:-}" <<'PY'
 import contextlib
 import runpy
 import sys
@@ -1566,7 +1600,7 @@ try:
     helper = runpy.run_path(sys.argv[1] + '/setup-workspace.py')
     with contextlib.closing(helper['Workspace'](sys.argv[2], locked=True)) as workspace:
         project, _ = workspace.project(sys.argv[3], 'existing')
-        helper['transfer'].reject_acl(project)
+        helper['transfer'].project_sharing_uid(project, expected_uid=sys.argv[4] or None)
         workspace.assert_project(sys.argv[3], project)
 except (ValueError, OSError, UnicodeError, RecursionError) as error:
     print('Saved workspace validation failed: ' + str(error), file=sys.stderr)
@@ -1580,10 +1614,15 @@ launch_runtime() {
     if [ "${1:-}" = --runtime-lock-held ]; then locked=true; shift; fi
     validate_launch "$@" || return $?
     if [ "$locked" = false ]; then
+        # The lifecycle helper creates private metadata, so reject unsafe sharing
+        # configuration and protected ancestors before entering it.
+        if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
         exec /usr/bin/python3 -I "$RUNTIME_CODE_DIR/lifecycle-lock.py" /workspace "$RUNTIME_PROFILE" /bin/bash /entrypoint.sh --runtime-lock-held "${1:-headless}"
     fi
     # The exec-held descriptor stays open until the owner and its services exit.
     [ -e /proc/self/fd/9 ] || { echo 'runtime lifecycle lock descriptor is missing' >&2; return 2; }
+    # Recheck under ownership, before either profile repairs protected parents.
+    if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
     # Saved launches must not recreate a deleted project or repair an unsafe one.
     # Check while locked, before native startup creates or normalizes any paths.
     if [ "$RUNTIME_PROFILE" = native ] && [ "${RUNTIME_REQUIRE_EXISTING_PROJECT:-0}" = 1 ]; then
@@ -1596,7 +1635,6 @@ launch_runtime() {
         native_main
         return $?
     fi
-    if [ -n "${LOCAL_WORKSPACE_HOST_UID:-}" ]; then run_local_workspace validate; fi
     install_managed_traps
     main
 }

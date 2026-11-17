@@ -66,13 +66,20 @@ test("host wrapper only inspects and execs a matching live native container; nev
 	const directory = await fs.mkdtemp(path.join(os.tmpdir(), "document-cli-")), calls = path.join(directory, "calls.jsonl")
 	t.after(() => fs.rm(directory, { recursive: true, force: true }))
 	await fs.writeFile(path.join(directory, "docker"), `#!${process.execPath}\nconst fs = require('node:fs'); const args = process.argv.slice(2); fs.appendFileSync(process.env.MOCK_CALLS, JSON.stringify(args)+'\\n'); if(args[0]==='ps') console.log('live'); else if(args[0]==='inspect') console.log(JSON.stringify([{Id:'live', State:{Running:true}, Config:{Env:['RUNTIME_PROFILE=native','PROJECT_ID=default','RUNTIME_NATIVE_PROCESSING_MODEL=provider/model']},Mounts:[{Destination:'/workspace',Type:'volume',Name:'geocluster-native-workspace'}]}])); else if(args[0]==='exec') process.exit(0); else process.exit(9);\n`, { mode: 0o755 })
-	const result = spawnSync("bash", [fileURLToPath(new URL("../../scripts/process-document.sh", import.meta.url)), "status", "--request", "retained"], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MOCK_CALLS: calls } })
-	assert.equal(result.status, 0, result.stderr)
-	const commands = (await fs.readFile(calls, "utf8")).trim().split("\n").map(JSON.parse)
-	assert.deepEqual(commands.map(([command]) => command), ["ps", "inspect", "exec"])
-	assert.deepEqual(commands[2].slice(-3), ["status", "--request", "retained"])
-	assert.ok(commands[2].includes("/opt/geocluster-runtime/process-document.mjs"))
-	assert.ok(commands[2].includes("PROJECT_ID=default"))
+	for (const selectors of [[], ["--workspace-volume=geocluster-native-workspace"],
+		["--workspace-volume", "other", "--workspace-volume=geocluster-native-workspace"],
+		["--workspace-volume=other", "--workspace-volume", "geocluster-native-workspace"],
+		[`--workspace-root=${directory}`, "--workspace-volume=geocluster-native-workspace"]]) {
+		await fs.writeFile(calls, "")
+		const result = spawnSync("bash", [fileURLToPath(new URL("../../scripts/process-document.sh", import.meta.url)), ...selectors, "status", "--request", "retained"], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MOCK_CALLS: calls } })
+		assert.equal(result.status, 0, result.stderr)
+		const commands = (await fs.readFile(calls, "utf8")).trim().split("\n").map(JSON.parse)
+		assert.deepEqual(commands.map(([command]) => command), ["ps", "inspect", "exec"])
+		const entry = commands[2].indexOf("/opt/geocluster-runtime/process-document.mjs")
+		assert.ok(entry >= 0)
+		assert.deepEqual(commands[2].slice(entry + 1), ["status", "--request", "retained"])
+		assert.ok(commands[2].includes("PROJECT_ID=default"))
+	}
 })
 
 test("host wrapper rejects removed project selectors before contacting Docker", async (t) => {
@@ -84,6 +91,23 @@ test("host wrapper rejects removed project selectors before contacting Docker", 
 		assert.equal(result.status, 2, result.stderr)
 		assert.match(result.stderr, /--project.*(removed|supported)|removed.*--project/i)
 		await assert.rejects(fs.stat(calls), { code: "ENOENT" })
+	}
+})
+
+test("host wrapper rejects every empty selector occurrence before contacting Docker", async (t) => {
+	const directory = await fs.mkdtemp("/tmp/opencode/document-empty-selector-"), calls = path.join(directory, "calls")
+	t.after(() => fs.rm(directory, { recursive: true, force: true }))
+	await fs.writeFile(path.join(directory, "docker"), '#!/bin/sh\nprintf called > "$MOCK_CALLS"\nexit 97\n', { mode: 0o755 })
+	for (const flag of ["--workspace-volume", "--workspace-root", "--container"]) {
+		const value = flag === "--workspace-root" ? directory : "selected"
+		for (const empty of [[flag, ""], [`${flag}=`]]) {
+			for (const args of [empty, [...empty, flag, value], [flag, value, ...empty], [...empty, `${flag}=${value}`], [`${flag}=${value}`, ...empty]]) {
+				const result = spawnSync("bash", [fileURLToPath(new URL("../../scripts/process-document.sh", import.meta.url)), ...args, "status"], { encoding: "utf8", env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, MOCK_CALLS: calls } })
+				assert.equal(result.status, 2, result.stderr)
+				assert.match(result.stderr, /requires a nonempty value/)
+				await assert.rejects(fs.stat(calls), { code: "ENOENT" })
+			}
+		}
 	}
 })
 

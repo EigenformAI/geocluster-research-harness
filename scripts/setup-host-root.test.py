@@ -2,6 +2,7 @@
 """Protected host planning and create-only elevation, without requiring sudo."""
 import hashlib
 import importlib.util
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -189,13 +190,16 @@ class HostWorkspaceTest(unittest.TestCase):
                 helper.main(argv)
         self.assertFalse(self.target.exists())
 
-    def root_owner(self, path):
+    def root_owner(self, path, *retained):
         """Emulate only root ownership, not privilege or kernel access control."""
         original = os.fstat
+        owned = {(info.st_dev, info.st_ino) for info in retained}
         def inspect(fd):
             info = original(fd)
             name = os.readlink(f"/proc/self/fd/{fd}")
-            if name == str(path) or name.startswith(str(path) + "/"):
+            key = (info.st_dev, info.st_ino)
+            if key in owned or name == str(path) or name.startswith(str(path) + "/"):
+                owned.add(key)  # A rename must not change the emulated owner.
                 fields = {key: getattr(info, key) for key in dir(info) if key.startswith("st_")}
                 fields["st_uid"] = 0
                 return types.SimpleNamespace(**fields)
@@ -239,6 +243,154 @@ class HostWorkspaceTest(unittest.TestCase):
             self.assertIsNone(host.create_host_root(plan))
         run.assert_not_called()
         self.assertEqual(before, {str(path): path.stat().st_mode for path in self.target.rglob("*")})
+
+    def elevation(self, plan):
+        def elevate(command, **options):
+            self.assertEqual(options["input"], plan["_code"])
+            environment = {"SUDO_UID": str(os.getuid()), "SUDO_USER": self.account.pw_name}
+            with mock.patch.object(os, "geteuid", return_value=0), mock.patch.dict(os.environ, environment):
+                plan["_helper"].main(command[5:])
+            return subprocess.CompletedProcess(command, 0)
+        return elevate
+
+    def test_created_root_reuses_same_approval_after_runtime_initialization(self):
+        plan = self.plan()
+        with self.root_owner(self.target), \
+                mock.patch.object(subprocess, "run", side_effect=self.elevation(plan)) as run, \
+                mock.patch.object(os, "chmod", side_effect=AssertionError("chmod")), \
+                mock.patch.object(os, "chown", side_effect=AssertionError("chown")), \
+                mock.patch.object(host, "_capture_source", side_effect=AssertionError("reopened")):
+            host.create_host_root(plan)
+            before = self.target.stat()
+            private = self.target / ".runtime"
+            private.mkdir()
+            (private / "profile").write_bytes(b"native\n")
+            for _ in range(2):
+                host.create_host_root(plan)
+            self.assertEqual(self.target.stat().st_ino, before.st_ino)
+        run.assert_called_once()
+        self.assertTrue(plan["existing"])
+        self.assertEqual(plan["command"], "")
+        plan.close()
+        with self.assertRaisesRegex(ValueError, "live"):
+            host.create_host_root(plan)
+
+    def test_created_approval_rejects_safe_replacement_and_metadata_changes(self):
+        for change in ("replacement", "rename", "parent", "mode", "owner", "mount", "acl"):
+            with self.subTest(change=change):
+                target = self.base / change
+                plan = self.plan(target)
+                helper = plan["_helper"]
+                with self.root_owner(target), \
+                        mock.patch.object(subprocess, "run", side_effect=self.elevation(plan)) as run:
+                    host.create_host_root(plan)
+                before = target.stat()
+                if change in ("replacement", "rename"):
+                    target.rename(target.with_name(change + "-original"))
+                    if change == "replacement":
+                        target.mkdir(mode=0o755)
+                elif change == "parent":
+                    self.base.rename(self.base.with_name("original-workspaces"))
+                    self.base.mkdir()
+                elif change == "mode":
+                    target.chmod(0o700)  # Safe for a fresh plan, but not approved.
+                identity = helper.identity
+                def inspect(fd, path):
+                    result = identity(fd, path)
+                    if change == "mount" and str(path) == str(target):
+                        result["mount"] += 1
+                    return result
+                def attributes(fd):
+                    if change == "acl" and os.readlink(f"/proc/self/fd/{fd}") == str(target):
+                        return ["system.posix_acl_access"]
+                    return []
+                ownership = self.root_owner(target, before) if change != "owner" else nullcontext()
+                with ownership, \
+                        mock.patch.object(helper, "identity", side_effect=inspect), \
+                        mock.patch.object(os, "listxattr", side_effect=attributes), \
+                        mock.patch.object(subprocess, "run") as retry, \
+                        mock.patch.object(os, "chmod", side_effect=AssertionError("chmod")), \
+                        mock.patch.object(os, "chown", side_effect=AssertionError("chown")):
+                    if change == "rename":
+                        with self.assertRaises(FileNotFoundError):
+                            host.create_host_root(plan)
+                    else:
+                        reason = {"replacement": "name was replaced", "parent": "name was replaced",
+                                  "mode": "identity changed", "owner": "identity changed", "mount": "identity changed",
+                                  "acl": "ACL"}[change]
+                        with self.assertRaisesRegex(ValueError, reason):
+                            host.create_host_root(plan)
+                retry.assert_not_called()
+                run.assert_called_once()
+                if target.exists():
+                    self.assertEqual(target.stat().st_uid, before.st_uid)
+                    self.assertEqual(list(target.iterdir()), [])
+                    self.assertEqual(target.stat().st_mode & 0o777, 0o700 if change == "mode" else 0o755)
+                if change == "parent":
+                    self.base.rmdir()
+                    self.base.with_name("original-workspaces").rename(self.base)
+
+    def test_failed_creation_verification_never_adopts_created_collision(self):
+        for failure in ("helper", "verification", "contents", "mode"):
+            with self.subTest(failure=failure):
+                target = self.base / failure
+                self.base.mkdir(parents=True, exist_ok=True)
+                plan = self.plan(target)
+                helper = plan["_helper"]
+                identity, elevate = helper.identity, self.elevation(plan)
+                returned = False
+                def create(command, **options):
+                    nonlocal returned
+                    result = elevate(command, **options)
+                    returned = True
+                    if failure == "contents":
+                        (target / "unexpected").write_bytes(b"keep")
+                    elif failure == "mode":
+                        target.chmod(0o700)
+                    return subprocess.CompletedProcess(command, 1) if failure == "helper" else result
+                def inspect(fd, path):
+                    if failure == "verification" and returned and str(path) == str(target):
+                        raise ValueError("postcreation verification failed")
+                    return identity(fd, path)
+                with self.root_owner(target), mock.patch.object(helper, "identity", side_effect=inspect), \
+                        mock.patch.object(subprocess, "run", side_effect=create) as run:
+                    descriptors = len(os.listdir("/proc/self/fd"))
+                    with self.assertRaisesRegex(ValueError, "Administrator|postcreation|ordinary|failed verification"):
+                        host.create_host_root(plan)
+                    self.assertEqual(len(os.listdir("/proc/self/fd")), descriptors)
+                self.assertFalse(plan["existing"])
+                before = target.stat()
+                with self.root_owner(target), mock.patch.object(subprocess, "run") as retry:
+                    with self.assertRaisesRegex(ValueError, "now exists"):
+                        host.create_host_root(plan)
+                retry.assert_not_called()
+                run.assert_called_once()
+                self.assertEqual(before, target.stat())
+
+    def test_created_root_with_unprepared_contents_is_not_reused(self):
+        plan = self.plan()
+        with self.root_owner(self.target), \
+                mock.patch.object(subprocess, "run", side_effect=self.elevation(plan)) as run:
+            host.create_host_root(plan)
+            (self.target / "unexpected").write_bytes(b"keep these bytes")
+            with self.assertRaisesRegex(ValueError, "ordinary"):
+                host.create_host_root(plan)
+        run.assert_called_once()
+        self.assertEqual((self.target / "unexpected").read_bytes(), b"keep these bytes")
+
+    def test_interruption_after_retaining_root_does_not_close_approved_descriptor(self):
+        plan = self.plan()
+        update = plan.update
+        def interrupt(**values):
+            update(**values)
+            raise KeyboardInterrupt()
+        with self.root_owner(self.target), \
+                mock.patch.object(subprocess, "run", side_effect=self.elevation(plan)) as run:
+            with mock.patch.object(plan, "update", side_effect=interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    host.create_host_root(plan)
+            host.create_host_root(plan)
+        run.assert_called_once()
 
     def test_host_rejects_acl_and_symlink_helper_source(self):
         with mock.patch.object(os, "listxattr", return_value=["system.posix_acl_access"]):

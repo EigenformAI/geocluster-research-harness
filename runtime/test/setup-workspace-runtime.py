@@ -71,6 +71,9 @@ class RuntimeTests(unittest.TestCase):
         (source / 'folder').mkdir(mode=0o755)
         (source / 'folder/input').write_bytes(b'approved personal bytes\x00\xff')
         (source / 'folder/input').chmod(0o4751 if private else 0o4750)
+        for name in ('!notes.txt', '-assays.csv', ' leading-space.txt', 'folder/!nested.txt'):
+            (source / name).write_bytes(('ordinary filename: ' + name).encode())
+            (source / name).chmod(0o640)
         if private:
             source.chmod(0o700)
             (source / 'secret').write_text('private')
@@ -136,6 +139,119 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(receipt.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE((sample / 'drilling').stat().st_mode), 0o2770)
         self.assertEqual(stat.S_IMODE((sample / 'drilling/assays.csv').stat().st_mode), 0o660)
+
+    def share(self, path, *, uid=20001):
+        for directory, _, files in os.walk(path):
+            subprocess.run(['setfacl', '--set', f'u::rwx,u:{uid}:rwx,g::rwx,m::rwx,o::r-x,d:u::rwx,d:u:{uid}:rwx,d:g::rwx,d:m::rwx,d:o::r-x', directory], check=True)
+            os.chmod(directory, 0o2775)
+            for name in files:
+                file = Path(directory) / name
+                mode = stat.S_IMODE(file.stat().st_mode)
+                host = 'rwx' if mode & 0o100 else 'rw-'
+                group = 'rwx' if mode & 0o010 else 'rw-'
+                mask = 'rwx' if mode & 0o110 else 'rw-'
+                subprocess.run(['setfacl', '--no-mask', '--set', f'u::{host},u:{uid}:{host},g::{group},m::{mask},o::---', str(file)], check=True)
+
+    def test_shared_samples_remain_unchanged_and_replay_rejects_tampering(self):
+        result = self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
+        project = self.workspace / 'default'
+        self.share(project)
+        inspection = self.success('inspect', '--project', 'default', locked=False)
+        self.assertEqual(inspection['samples'][0]['outcome'], 'unchanged')
+        replay = self.success('prepare', '--project', 'default', '--expect', 'absent', '--samples')
+        self.assertEqual(replay['operation'], result['operation'])
+        sample = project / 'wattle-creek'
+        for mutation, restore in [
+            (lambda: os.chmod(sample / 'drilling', 0o2777), lambda: os.chmod(sample / 'drilling', 0o2775)),
+            (lambda: subprocess.run(['setfacl', '-m', 'u:20002:rwx', str(sample / 'drilling')], check=True),
+             lambda: subprocess.run(['setfacl', '-x', 'u:20002', str(sample / 'drilling')], check=True)),
+            (lambda: os.chown(sample / 'drilling', 998, 999), lambda: os.chown(sample / 'drilling', 999, 999)),
+            (lambda: subprocess.run(['setfacl', '-b', str(sample / 'drilling/assays.csv')], check=True),
+             lambda: self.share(sample)),
+        ]:
+            mutation()
+            self.assertEqual(self.success('inspect', '--project', 'default', locked=False)['samples'][0]['outcome'], 'modified')
+            self.failure('unverified_copy', 'prepare', '--project', 'default', '--expect', 'absent', '--samples')
+            restore()
+        self.assertEqual(self.success('inspect', '--project', 'default', locked=False)['samples'][0]['outcome'], 'unchanged')
+
+    def test_import_into_shared_project_is_immediately_host_accessible(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        source, manifest, header, body = self.source_archive()
+        header['expect'] = 'existing'
+        result = self.success('import', data=self.frame(header, body))
+        self.assertEqual(result['outcome'], 'unchanged')
+        # Traverse only the test container's outer fixture, not protected runtime state.
+        self.base.chmod(0o755)
+        script = '''import os, pathlib, sys
+p=pathlib.Path(sys.argv[1]); f=p/'folder/input'
+assert f.read_bytes(); f.write_bytes(b'host edit')
+f.rename(p/'folder/renamed'); (p/'folder/renamed').unlink()
+(p/'new').mkdir(); (p/'new/copy').write_text('copy'); (p/'new/copy').unlink(); (p/'new').rmdir()
+try: os.listdir(p.parent.parent/'.runtime/setup/staging')
+except PermissionError: pass
+else: raise AssertionError('private staging exposed')
+'''
+        host = subprocess.run([sys.executable, '-c', script, str(project / 'personal')], user=20001, group=20001, extra_groups=[], capture_output=True)
+        self.assertEqual(host.returncode, 0, host.stderr)
+        self.assertEqual(self.success('receipt', '--operation', result['operation'])['outcome'], 'modified')
+
+    def test_shared_project_rejects_foreign_or_partial_acl_without_repair(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        subprocess.run(['setfacl', '-m', 'u:20002:rwx', str(project)], check=True)
+        before = project.stat().st_ctime_ns
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
+        self.assertEqual(project.stat().st_ctime_ns, before)
+
+    def test_complete_sharing_removal_cannot_downgrade_import_receipts(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        _, _, header, body = self.source_archive()
+        header['expect'] = 'existing'
+        result = self.success('import', data=self.frame(header, body))
+        self.base.chmod(0o755)
+        self.remove_sharing_as_service(project)
+        self.failure('unsafe_workspace', 'receipt', '--operation', result['operation'])
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing')
+
+    def remove_sharing_as_service(self, project):
+        attack = '''import os, pathlib, sys
+p=pathlib.Path(sys.argv[1])
+for root, dirs, files in os.walk(p):
+ for acl in ('system.posix_acl_access','system.posix_acl_default'):
+  try: os.removexattr(root,acl)
+  except OSError as e:
+   if e.errno != 61: raise
+ os.chmod(root,0o2775 if pathlib.Path(root)==p else 0o2770)
+ for name in files:
+  f=pathlib.Path(root)/name
+  os.removexattr(f,'system.posix_acl_access'); os.chmod(f,0o660 | (f.stat().st_mode & 0o110))
+'''
+        changed = subprocess.run([sys.executable, '-c', attack, str(project)], user=999, group=999,
+                                 extra_groups=[], capture_output=True)
+        self.assertEqual(changed.returncode, 0, changed.stderr)
+
+    def test_missing_shared_project_is_not_recreated_before_policy_rejection(self):
+        self.success('prepare', '--project', 'default', '--expect', 'absent')
+        project = self.workspace / 'default'
+        self.share(project)
+        self.success('prepare', '--project', 'default', '--expect', 'existing', '--samples')
+        policy = self.workspace / '.runtime/setup/sharing/default.json'
+        original_policy = policy.read_bytes()
+        shutil.rmtree(project)
+        before = self.workspace.stat()
+        response = self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'absent')
+        self.assertFalse(project.exists())
+        after = self.workspace.stat()
+        self.assertEqual((after.st_mtime_ns, after.st_ctime_ns), (before.st_mtime_ns, before.st_ctime_ns))
+        self.assertEqual(policy.read_bytes(), original_policy)
+        self.assertIn(str(policy), response['message'])
+        self.assertIn('trusted administrator migration', response['message'])
 
     def test_image_samples_are_checked_against_provenance_before_copy(self):
         spec = importlib.util.spec_from_file_location('setup_fixture', HELPER)
@@ -213,7 +329,11 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(exported.returncode, 0, exported.stderr)
         self.assertEqual(exported.stderr, b'')
         transfer.safe_extract(io.BytesIO(exported.stdout), str(self.base), 'export')
-        self.assertEqual((self.base / 'export/folder/input').read_bytes(), (source / 'folder/input').read_bytes())
+        for entry in manifest['entries']:
+            original = source / entry['path']
+            self.assertEqual(stat.S_IMODE(original.stat().st_mode), entry['mode'])
+            if entry['type'] == 'file':
+                self.assertEqual((self.base / 'export' / entry['path']).read_bytes(), original.read_bytes())
         self.assertEqual(self.success('receipt', '--operation', result['operation'])['outcome'], 'unchanged')
 
     def test_host_export_uses_callers_group_not_destination_setgid(self):
@@ -300,6 +420,72 @@ class RuntimeTests(unittest.TestCase):
         result = self.success('prepare', '--project', 'default', '--expect', 'absent', '--resume', record['operation'], program=program)
         self.assertEqual(result['outcome'], 'unchanged')
         self.assertEqual(result['state'], 'verified')
+
+    def test_partly_shared_stage_stays_private_and_resumes_with_immediate_access(self):
+        record = self.interrupted_samples('staged')
+        self.share(self.workspace / 'default')
+        stage = self.workspace / '.runtime/setup/staging' / record['operation'] / 'tree'
+        # Stop between installing access and default ACLs on the first directory.
+        fd = transfer.open_absolute(str(stage))
+        try:
+            acl, mode = transfer.sharing_acl(20001, 0o2770, directory=True)
+            raw = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in acl)
+            os.setxattr(fd, transfer.ACL_ACCESS, raw)
+            self.assertEqual(stat.S_IMODE(os.fstat(fd).st_mode), mode)
+        finally:
+            os.close(fd)
+        self.base.chmod(0o755)
+        for uid in (999, 20001):
+            probe = subprocess.run([sys.executable, '-c', 'import os,sys; os.listdir(sys.argv[1])', str(stage)],
+                                   user=uid, group=uid, extra_groups=[], capture_output=True)
+            self.assertNotEqual(probe.returncode, 0)
+        result = self.success('prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+        self.assertEqual((result['state'], result['outcome']), ('verified', 'unchanged'))
+        receipt = self.workspace / '.runtime/setup/receipts' / (record['operation'] + '.json')
+        verified = json.loads(receipt.read_text())
+        self.assertEqual(verified['manifest'], record['manifest'])
+        self.assertEqual(verified['manifestHash'], record['manifestHash'])
+        probe = subprocess.run([sys.executable, '-c', 'import pathlib,sys; assert pathlib.Path(sys.argv[1]).read_bytes()',
+                                str(self.workspace / 'default/wattle-creek/drilling/assays.csv')],
+                               user=20001, group=20001, extra_groups=[], capture_output=True)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.remove_sharing_as_service(self.workspace / 'default')
+        self.failure('unsafe_workspace', 'receipt', '--operation', record['operation'])
+        self.failure('unsafe_workspace', 'prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+
+    def test_resumed_sharing_policy_write_failure_keeps_stage_private_and_recoverable(self):
+        record = self.interrupted_samples('staged')
+        self.share(self.workspace / 'default')
+        stage = self.workspace / '.runtime/setup/staging' / record['operation'] / 'tree'
+        before = transfer.capture_source(stage)
+        receipt = self.workspace / '.runtime/setup/receipts' / (record['operation'] + '.json')
+        original_receipt = receipt.read_bytes()
+        # Fail the actual create-only policy commit, not sharing or publication.
+        program = '''import errno,importlib.util,json,os,sys
+sys.path.insert(0,os.path.dirname(sys.argv[1]))
+s=importlib.util.spec_from_file_location('setup',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+original=m.transfer.rename_noreplace
+def rename(source,name,destination,target):
+ if target=='default.json': raise OSError(errno.ENOSPC,'policy storage full')
+ return original(source,name,destination,target)
+m.transfer.rename_noreplace=rename
+sys.argv=sys.argv[1:]
+try: print(json.dumps(m.main()))
+except OSError as error:
+ print(json.dumps({'error':'io_error','message':str(error)}),file=sys.stderr); sys.exit(2)
+'''
+        self.failure('io_error', 'prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'], program=program)
+        self.assertFalse((self.workspace / 'default/wattle-creek').exists())
+        self.assertEqual(receipt.read_bytes(), original_receipt)
+        self.assertEqual(transfer.capture_source(stage), before)
+        self.base.chmod(0o755)
+        for uid in (999, 20001):
+            probe = subprocess.run([sys.executable, '-c', 'import os,sys; os.listdir(sys.argv[1])', str(stage)],
+                                   user=uid, group=uid, extra_groups=[], capture_output=True)
+            self.assertNotEqual(probe.returncode, 0)
+        result = self.success('prepare', '--project', 'default', '--expect', 'existing', '--resume', record['operation'])
+        self.assertEqual((result['state'], result['outcome']), ('verified', 'unchanged'))
+        self.assertEqual(result['manifestHash'], record['manifestHash'])
 
     def test_publication_without_verified_receipt_is_never_promoted(self):
         for state in ('uncertain', 'published'):

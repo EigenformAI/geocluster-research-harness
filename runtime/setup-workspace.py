@@ -169,6 +169,100 @@ class Workspace:
                 raise
             return False
 
+    def sharing_policy(self, project):
+        transfer.validate_project(project)
+        if not self.records():
+            return None
+        try:
+            directory = protected_directory(self.setup, 'sharing', private=True)
+        except FileNotFoundError:
+            return None
+        try:
+            try:
+                record = read_record(directory, project + '.json', 4096)
+            except FileNotFoundError:
+                return None
+            if (not isinstance(record, dict) or set(record) != {'uid', 'device', 'inode'}
+                    or any(type(value) is not int or value < 0 for value in record.values())
+                    or not 0 < record['uid'] < transfer.ACL_UNDEFINED or record['uid'] in range(996, 1000)):
+                transfer.fail('unsafe_workspace', 'Invalid protected sharing policy')
+            return record
+        finally:
+            os.close(directory)
+
+    def assert_sharing_policy(self, project, fd):
+        record = self.sharing_policy(project)
+        uid = transfer.project_sharing_uid(fd)
+        if record is not None and record != dict(retained_identity(fd), uid=uid):
+            self.fail_sharing_policy(project, 'Project identity or host sharing grant differs from its protected policy')
+
+    def fail_sharing_policy(self, project, message):
+        path = os.path.join(self.path, '.runtime', 'setup', 'sharing', project + '.json')
+        transfer.fail('unsafe_workspace', message + '; protected policy record: ' + path
+                      + '. Restore the recorded project and grants, or use explicit provisioning for deliberate same-project permission changes.'
+                      + ' For a trusted administrator migration, stop the runtime, verify the intended filesystem and project, then deliberately remove only this record before explicit provisioning.')
+
+    def assert_provisioning_identity(self, project):
+        """Allow deliberate UID recovery, never mutate a replacement project."""
+        record = self.sharing_policy(project)
+        if record is None:
+            return
+        try:
+            fd = transfer.open_child(self.root, project, directory=True)
+        except FileNotFoundError:
+            self.fail_sharing_policy(project, 'Previously shared project is missing')
+        try:
+            current = retained_identity(fd)
+            if any(record[key] != current[key] for key in ('device', 'inode')):
+                self.fail_sharing_policy(project, 'Previously shared project identity changed; provisioning cannot repair a replacement')
+            transfer.assert_named(self.root, project, fd)
+        finally:
+            os.close(fd)
+
+    def remember_sharing(self, project, uid):
+        """Trusted locked bootstrap/publication only, after complete provisioning.
+
+        Unlike existing-project validation, explicit provisioning may refresh the
+        UID after an administrator removes previous grants. Never bless a new inode.
+        """
+        self.validate_lock()
+        transfer.validate_project(project)
+        fd = transfer.open_child(self.root, project, directory=True)
+        try:
+            info = os.fstat(fd)
+            if info.st_uid != 999 or info.st_gid != 999 or stat.S_IMODE(info.st_mode) != 0o2775:
+                transfer.fail('unsafe_project', 'Only an existing native shared project can establish sharing policy')
+            observed = transfer.project_sharing_uid(fd, expected_uid=uid)
+            if observed is None:
+                transfer.fail('unsafe_workspace', 'Sharing policy requires a fully provisioned project ACL')
+            previous = self.sharing_policy(project)
+            record = dict(retained_identity(fd), uid=observed)
+            if previous is not None and any(previous[key] != record[key] for key in ('device', 'inode')):
+                self.fail_sharing_policy(project, 'Previously shared project identity changed; retain it for inspection')
+            transfer.assert_named(self.root, project, fd)
+            if previous == record:
+                return
+            self.records(create=True)
+            directory = protected_directory(self.setup, 'sharing', create=True, private=True)
+            try:
+                temporary = '.write-' + str(uuid.uuid4())
+                output = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=directory)
+                try:
+                    transfer.write_all(output, transfer.canonical_bytes(record))
+                    os.fsync(output)
+                finally:
+                    os.close(output)
+                transfer.assert_named(self.root, project, fd)
+                if previous is None:
+                    transfer.rename_noreplace(directory, temporary, directory, project + '.json')
+                else:
+                    os.rename(temporary, project + '.json', src_dir_fd=directory, dst_dir_fd=directory)
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            os.close(fd)
+
     def project(self, project, expect=None):
         transfer.validate_project(project)
         try:
@@ -178,6 +272,8 @@ class Workspace:
                 transfer.fail('project_missing', 'Selected project is missing', project=project)
             if expect is None:
                 return None, False
+            if self.sharing_policy(project) is not None:
+                self.fail_sharing_policy(project, 'Previously shared project is missing; preparation cannot recreate it')
             os.mkdir(project, 0o700, dir_fd=self.root)
             fd = transfer.open_child(self.root, project, directory=True)
             transfer.drop_acl(fd)
@@ -195,6 +291,8 @@ class Workspace:
             info = os.fstat(fd)
             if info.st_uid != 999 or info.st_gid != 999 or stat.S_IMODE(info.st_mode) not in (0o2770, 0o2775):
                 transfer.fail('unsafe_project', 'Project must already have native ownership 999:999 and mode 2770 or 2775; existing permissions are never repaired', project=project)
+            self.assert_sharing_policy(project, fd)
+            transfer.assert_named(self.root, project, fd)
             return self.keep(fd), created
         except BaseException:
             os.close(fd)
@@ -205,6 +303,8 @@ class Workspace:
         info = os.fstat(fd)
         if info.st_uid != 999 or info.st_gid != 999 or stat.S_IMODE(info.st_mode) not in (0o2770, 0o2775):
             transfer.fail('unsafe_project', 'Project permissions changed during the operation')
+        self.assert_sharing_policy(project, fd)
+        transfer.assert_named(self.root, project, fd)
 
     def read_receipt(self, operation):
         valid_uuid(operation)
@@ -297,7 +397,8 @@ class Workspace:
                 result['outcome'] = 'unverified'
             else:
                 try:
-                    transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                    transfer.verify_tree(tree, record['manifest'], service_ownership=True,
+                                         sharing_uid=transfer.project_sharing_uid(project))
                     result['outcome'] = 'unchanged' if retained_identity(tree) == record['treeIdentity'] else 'modified'
                     transfer.assert_named(project, record['destination'], tree)
                 except (OSError, ValueError):
@@ -315,18 +416,26 @@ class Workspace:
                 transfer.fail('unverified_copy', 'Protected staging identity or manifest changed')
             tree = transfer.open_child(stage, 'tree', directory=True)
             try:
-                transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                sharing_uid = transfer.project_sharing_uid(project)
+                # Preparation can have stopped midway through installing sharing.
+                # Only private staged trees may contain a mixture of original and shared entries.
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True,
+                                     sharing_uid=sharing_uid, allow_unshared=True)
                 if retained_identity(tree) != record['treeIdentity']:
                     transfer.fail('unverified_copy', 'Protected stage no longer matches its verified manifest')
                 transfer.assert_named(stage, 'tree', tree)
                 self.assert_project(record['project'], project)
+                if sharing_uid is not None:
+                    self.remember_sharing(record['project'], sharing_uid)
+                    transfer.share_created_tree(tree, record['manifest'], sharing_uid)
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True, sharing_uid=sharing_uid)
                 transfer.assert_named(self.staging, record['operation'], stage)
                 transfer.rename_noreplace(stage, 'tree', project, record['destination'])
                 os.fsync(project)
                 os.fsync(stage)
                 record['state'] = 'published'
                 self.save_receipt(record)
-                transfer.verify_tree(tree, record['manifest'], service_ownership=True)
+                transfer.verify_tree(tree, record['manifest'], service_ownership=True, sharing_uid=sharing_uid)
                 transfer.assert_named(project, record['destination'], tree)
                 self.assert_project(record['project'], project)
                 record['state'] = 'verified'
@@ -354,6 +463,9 @@ class Workspace:
             pass
         else:
             transfer.fail('destination_exists', 'Destination already exists; choose a fresh child name', destination=destination)
+        sharing_uid = transfer.project_sharing_uid(project)
+        if sharing_uid is not None:
+            self.remember_sharing(project_name, sharing_uid)
         self.records(create=True)
         operation = str(uuid.uuid4())
         os.mkdir(operation, 0o700, dir_fd=self.staging)

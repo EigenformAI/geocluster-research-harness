@@ -16,10 +16,12 @@ import uuid
 REPO = Path(__file__).resolve().parent.parent
 STATE = REPO / '.geocluster'
 sys.path.insert(0, str(REPO / 'runtime'))
-from setup_transfer import (validate_project as _validate_project, validate_destination as _validate_destination,
-                            capture_source, validate_archive_headers, build_archive, canonical_hash)
 
 LIMIT = 65536
+# Inventory plus receipt summaries, not small local configuration records.
+WORKSPACE_INSPECTION_LIMIT = 16 * 1024 * 1024
+# 1000 paths of 4096 UTF-8 bytes: valid Unicode JSON escaping expands at most 3x.
+WORKSPACE_LIST_LIMIT = 16 * 1024 * 1024
 NATIVE_PROJECT = 'default'
 IMAGE_ID = re.compile(r'^sha256:[0-9a-f]{64}$')
 FINGERPRINT = re.compile(r'^[0-9a-f]{64}$')
@@ -30,6 +32,13 @@ class SetupError(ValueError):
     def __init__(self, message, code='failed', details=None):
         super().__init__(message)
         self.code, self.details = code, details or {}
+
+
+def require_linux_client():
+    if sys.platform != 'linux':
+        raise SetupError('GeoCluster native host commands require a Linux client. '
+                         'Run them from a Linux environment; a Linux Docker daemon alone '
+                         '(including Docker Desktop on macOS or Windows) is not sufficient.', 'platform')
 
 
 def _transfer_message(message, code, details):
@@ -58,6 +67,8 @@ def _source_error(error, source, fallback_code):
 
 
 def validate_project(value):
+    require_linux_client()
+    from setup_transfer import validate_project as _validate_project
     try:
         return _validate_project(value)
     except ValueError as error:
@@ -65,6 +76,8 @@ def validate_project(value):
 
 
 def validate_destination(value):
+    require_linux_client()
+    from setup_transfer import validate_destination as _validate_destination
     try:
         return _validate_destination(value)
     except ValueError as error:
@@ -80,14 +93,25 @@ def _object(pairs):
     return result
 
 
-def parse_json(raw):
-    if len(raw) > LIMIT:
-        raise SetupError('Settings or Docker metadata exceed the supported size.')
+def parse_json(raw, *, maximum=LIMIT, label='settings or Docker metadata'):
+    if len(raw) > maximum:
+        raise SetupError(label[0].upper() + label[1:] + ' exceed the supported size.')
     try:
-        return json.loads(raw, object_pairs_hook=_object,
-                          parse_constant=lambda _: (_ for _ in ()).throw(ValueError('non-finite JSON')))
+        value = json.loads(raw, object_pairs_hook=_object,
+                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError('non-finite JSON')))
+        pending = [value]
+        while pending:
+            item = pending.pop()
+            if isinstance(item, str):
+                item.encode('utf-8')
+            elif isinstance(item, list):
+                pending.extend(item)
+            elif isinstance(item, dict):
+                pending.extend(item)
+                pending.extend(item.values())
+        return value
     except (ValueError, UnicodeError, RecursionError) as error:
-        raise SetupError('Could not read valid JSON settings or Docker metadata.') from error
+        raise SetupError('Could not read valid JSON ' + label + '.') from error
 
 
 def _fields(value, required, optional=()):
@@ -329,6 +353,8 @@ def save_profile(value, guide):
 
 class Docker:
     def __init__(self):
+        require_linux_client()
+        from setup_transfer import canonical_hash
         identity, label, local = self._identity()
         self.fingerprint = canonical_hash(identity)
         self.label, self.local_host = label, local
@@ -401,6 +427,7 @@ class Docker:
         return {'selector': kind, 'context': context, 'endpoint': endpoint, 'ID': info['ID'], 'OSType': info['OSType']}, label, local
 
     def check(self, expected=None):
+        from setup_transfer import canonical_hash
         identity, _, _ = self._identity()
         if canonical_hash(identity) != (expected or self.fingerprint):
             raise SetupError('Your Docker connection changed during setup. Choose the connection you want to use, then run ./scripts/setup.sh again.', 'docker_changed')
@@ -476,7 +503,7 @@ class Docker:
         args = ['run', '--pull=never', '--rm', '--read-only', '--network', 'none', '--user', '0:0', '--mount', self._mount(storage, True), '--entrypoint', 'python3', image_id,
                 '/opt/geocluster-runtime/setup-workspace.py', 'inspect', '--project', project]
         self.check()
-        return parse_json(self._run(args))
+        return parse_json(self._run(args), maximum=WORKSPACE_INSPECTION_LIMIT, label='workspace inspection responses')
 
     def operation(self, storage, image_id, args, input_file=None, output_file=None):
         if not IMAGE_ID.fullmatch(image_id):
@@ -491,11 +518,16 @@ class Docker:
                     '/opt/geocluster-runtime/lifecycle-lock.py', '/workspace', 'native',
                     'python3', '/opt/geocluster-runtime/setup-workspace.py', *args]
         self.check()
+        if output_file is None and args and args[0] == 'list':
+            return parse_json(self._run(command, input_file=input_file), maximum=WORKSPACE_LIST_LIMIT,
+                              label='workspace folder listing responses')
         raw = self._run(command, input_file=input_file, output_file=output_file)
         return None if output_file is not None else parse_json(raw)
 
 
 def prepare_import(source):
+    require_linux_client()
+    from setup_transfer import capture_source, validate_archive_headers
     try:
         manifest = capture_source(source)
         validate_archive_headers(manifest)
@@ -505,6 +537,8 @@ def prepare_import(source):
 
 
 def import_source(docker, storage, image_id, project, destination, source, allow_restricted, expect='existing', manifest=None):
+    require_linux_client()
+    from setup_transfer import build_archive, canonical_hash
     validate_project(project)
     validate_destination(destination)
     if manifest is None:

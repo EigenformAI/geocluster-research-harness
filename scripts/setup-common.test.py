@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).parent))
 import setup_common as common
 from setup_transfer import TransferError, capture_source
+import setup_transfer as transfer
 
 
 class FakeDocker(common.Docker):
@@ -32,6 +33,53 @@ class FakeDocker(common.Docker):
 
 
 class CommonTests(unittest.TestCase):
+    def test_json_requires_unicode_scalars_in_all_strings_and_keys(self):
+        valid = {'\U0001f600': ['\U0001f600', {'ignored': '\U0001f600'}]}
+        for raw in (json.dumps(valid).encode(), json.dumps(valid, ensure_ascii=False).encode()):
+            self.assertEqual(common.parse_json(raw), valid)
+        for raw in (b'"\\ud800"', b'{"ignored":"\\udfff"}', b'{"\\ud800":0}',
+                    b'{"nested":[{"ignored":"\\ud800"}]}', b'{"nested":[{"\\udfff":0}]}'):
+            for maximum in (65536, 16 * 1024 * 1024):
+                with self.subTest(raw=raw, maximum=maximum):
+                    with self.assertRaisesRegex(common.SetupError, 'Could not read valid JSON'):
+                        common.parse_json(raw, maximum=maximum)
+
+    def test_workspace_responses_have_a_separate_bounded_budget(self):
+        docker = object.__new__(common.Docker)
+        docker.check = lambda: None
+        docker.volume_exists = lambda name: True
+        storage = {'kind': 'volume', 'name': 'fixture'}
+        children = [f'folder-{i:04d}-' + 'a' * 188 for i in range(400)]
+        operations = [{'operation': f'{i:036d}', 'project': 'default', 'destination': None,
+                       'kind': 'project', 'bundle': None, 'manifestHash': None,
+                       'state': 'verified', 'outcome': 'unchanged'} for i in range(1000)]
+        response = {'exists': True, 'project': 'default', 'children': children,
+                    'samples': [], 'operations': operations}
+        raw = json.dumps(response).encode()
+        self.assertGreater(len(raw), 65536)
+        def run(args, **kwargs):
+            return raw
+        with patch.object(docker, '_run', side_effect=run):
+            self.assertEqual(docker.inspect(storage, 'default', 'sha256:' + 'a' * 64), response)
+        with self.assertRaisesRegex(common.SetupError, 'exceed the supported size'):
+            common.parse_json(raw)
+        with patch.object(docker, '_run', side_effect=run):
+            with self.assertRaisesRegex(common.SetupError, 'exceed the supported size'):
+                docker.operation(storage, 'sha256:' + 'a' * 64,
+                                 ['prepare', '--project', 'default', '--expect', 'existing'])
+
+        # A page of valid long paths can also exceed the small metadata budget.
+        raw = json.dumps({'paths': ['a/' * 100 + str(i) for i in range(1000)]}).encode()
+        with patch.object(docker, '_run', side_effect=run):
+            self.assertEqual(docker.operation(storage, 'sha256:' + 'a' * 64,
+                             ['list', '--project', 'default', '--limit', '1000']), json.loads(raw))
+
+        # Never disable the limit or the strict parser for workspace data.
+        for raw in (b' ' * (16 * 1024 * 1024) + b'0', b'{"exists":true,"exists":false}', b'NaN'):
+            with self.subTest(length=len(raw)), patch.object(docker, '_run', side_effect=run):
+                with self.assertRaises(common.SetupError):
+                    docker.inspect(storage, 'default', 'sha256:' + 'a' * 64)
+
     def setUp(self):
         self.env = patch.dict(os.environ, {}, clear=True)
         self.env.start()
@@ -221,7 +269,7 @@ class CommonTests(unittest.TestCase):
         path = "work/été'\n\r\t\x1b[2J\x85\u202e\udcff"
         original = TransferError('unsafe_path', 'Symbolic links are not supported.',
                                  path=path, entry_type='symlink', hint='Use a separate copy.')
-        with patch.object(common, 'capture_source', side_effect=original):
+        with patch.object(transfer, 'capture_source', side_effect=original):
             with self.assertRaises(common.SetupError) as caught:
                 common.prepare_import(source)
         error = caught.exception
@@ -241,7 +289,7 @@ class CommonTests(unittest.TestCase):
 
     def test_runtime_transfer_errors_share_safe_formatting_and_hide_stderr(self):
         docker = object.__new__(common.Docker)
-        path = 'work/café\n\x1b[2J\udcff'
+        path = 'work/café\n\x1b[2J\U0001f600'
         payload = {'error': 'unsafe_path', 'message': 'Symbolic links are not supported.',
                    'path': path, 'entry_type': 'symlink', 'hint': 'Use a separate copy.',
                    'path_scope': 'transfer_source'}
@@ -257,11 +305,22 @@ class CommonTests(unittest.TestCase):
         self.assertIn('relative to transfer source', message)
         self.assertNotIn('Source folder:', message)
         self.assertIn('café', message)
-        self.assertIn(r'\n\x1b[2J\udcff', message)
+        self.assertIn(r'\n\x1b[2J', message)
+        self.assertIn('\U0001f600', message)
         self.assertIn(payload['message'], message)
         self.assertIn(payload['hint'], message)
         self.assertNotIn('secret', message)
         self.assertNotIn('private-host', message)
+
+        payload['path'] = 'work/\udcff'
+        invalid = subprocess.CompletedProcess([], 1, b'',
+            b'connection: ssh://user:secret@private-host\n' + json.dumps(payload).encode())
+        with patch.object(common.subprocess, 'run', return_value=invalid):
+            with self.assertRaises(common.SetupError) as caught:
+                docker._run(['run'])
+        self.assertEqual(caught.exception.code, 'docker_failed')
+        self.assertNotIn('secret', str(caught.exception))
+        self.assertNotIn('private-host', str(caught.exception))
 
     def test_private_workspace_path_is_not_presented_as_an_import_source(self):
         docker = object.__new__(common.Docker)
@@ -277,7 +336,7 @@ class CommonTests(unittest.TestCase):
     def test_transfer_error_without_hint_does_not_invent_advice(self):
         original = TransferError('unsupported_path', 'Header mode cannot fit the archive.',
                                  path='été.csv', header_field='mode')
-        with patch.object(common, 'capture_source', side_effect=original):
+        with patch.object(transfer, 'capture_source', side_effect=original):
             with self.assertRaises(common.SetupError) as caught:
                 common.prepare_import('/private/source')
         error = caught.exception
@@ -293,7 +352,7 @@ class CommonTests(unittest.TestCase):
                               ('unsafe_path', {}), ('unsupported_path', {'path': 42})):
             with self.subTest(code=code, details=details):
                 original = TransferError(code, 'Original diagnostic.', **details)
-                with patch.object(common, 'capture_source', side_effect=original):
+                with patch.object(transfer, 'capture_source', side_effect=original):
                     with self.assertRaises(common.SetupError) as caught:
                         common.prepare_import('/private/source')
                 self.assertEqual(str(caught.exception), 'Original diagnostic.')

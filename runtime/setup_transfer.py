@@ -1,8 +1,8 @@
 """Create-only, descriptor-relative transfers shared by setup and the host client.
 
 Archives are uncompressed USTAR with 10240-byte records: the first member is a
-bounded JSON manifest, followed by exactly its sorted members. No tar extraction
-API is used.
+bounded JSON manifest, followed by its root directory and lexically sorted
+non-root members. No tar extraction API is used.
 """
 import ctypes
 import errno
@@ -11,6 +11,7 @@ import json
 import os
 import re
 import stat
+import struct
 import tarfile
 import uuid
 
@@ -134,6 +135,89 @@ def drop_acl(fd):
                 raise
 
 
+# Linux POSIX ACL xattr ABI: version, then (tag, permissions, numeric identity).
+# Keep these tables aligned with local-workspace.js repair(); never use path ACL tools.
+ACL_ACCESS = 'system.posix_acl_access'
+ACL_DEFAULT = 'system.posix_acl_default'
+ACL_UNDEFINED = 0xffffffff
+
+
+def read_acl(fd, name):
+    try:
+        raw = os.getxattr(fd, name)
+    except OSError as error:
+        if error.errno in (errno.ENODATA, errno.ENOTSUP, errno.EOPNOTSUPP):
+            return None
+        raise
+    if len(raw) < 4 or (len(raw) - 4) % 8 or struct.unpack('<I', raw[:4])[0] != 2:
+        fail('unsafe_workspace', 'Unrecognized Linux POSIX ACL')
+    return [struct.unpack('<HHI', raw[index:index + 8]) for index in range(4, len(raw), 8)]
+
+
+def sharing_acl(uid, mode, *, directory):
+    if directory:
+        owner, host, group, mask, other = 7, 7, 7, 7, 5
+        target = 0o2775
+    else:
+        owner, other = (mode >> 6) & 7, mode & 7
+        host, group = 6 | bool(mode & 0o100), 6 | bool(mode & 0o010)
+        mask = host | group
+        target = (mode & ~0o070) | (mask << 3)
+    return [(1, owner, ACL_UNDEFINED), (2, host, uid), (4, group, ACL_UNDEFINED),
+            (16, mask, ACL_UNDEFINED), (32, other, ACL_UNDEFINED)], target
+
+
+def project_sharing_uid(fd, *, expected_uid=None):
+    """Read-only ordinary-project policy; protected objects still reject every ACL."""
+    access, default = read_acl(fd, ACL_ACCESS), read_acl(fd, ACL_DEFAULT)
+    if access is None and default is None:
+        return None
+    users = [entry[2] for entry in access or [] if entry[0] == 2]
+    if len(users) == 1:
+        uid = users[0]
+        wanted, _ = sharing_acl(uid, 0o2775, directory=True)
+        if (0 < uid < ACL_UNDEFINED and uid not in range(996, 1000)
+                and access == wanted and default == wanted
+                and stat.S_IMODE(os.fstat(fd).st_mode) == 0o2775
+                and (expected_uid is None or str(uid) == str(expected_uid))):
+            return uid
+    fail('unsafe_workspace', 'Project ACL must exactly match the supported host sharing policy and selected UID')
+
+
+def verify_permissions(fd, mode, *, directory, sharing_uid=None, allow_unshared=False):
+    access, default = read_acl(fd, ACL_ACCESS), read_acl(fd, ACL_DEFAULT)
+    observed = stat.S_IMODE(os.fstat(fd).st_mode)
+    if sharing_uid is None or allow_unshared:
+        if observed == mode and access is None and default is None:
+            return mode
+    if sharing_uid is not None:
+        wanted, target = sharing_acl(sharing_uid, mode, directory=directory)
+        # The access xattr also sets the mode. A crash can precede installing
+        # the directory's default xattr. This intermediate state is valid only
+        # inside private staging, never for a published receipt.
+        defaults = (None, wanted) if directory and allow_unshared else ((wanted,) if directory else (None,))
+        if observed == target and access == wanted and default in defaults:
+            return mode
+    fail('manifest_mismatch', 'Tree permissions or ACL changed')
+
+
+def share_created_tree(root, manifest, uid):
+    """Only newly extracted trees below a root-owned 0700 staging parent."""
+    for entry in manifest['entries']:
+        directory = entry['type'] == 'directory'
+        fd = open_relative(root, entry['path'], directory=directory)
+        try:
+            acl, mode = sharing_acl(uid, entry['mode'], directory=directory)
+            raw = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *item) for item in acl)
+            os.setxattr(fd, ACL_ACCESS, raw)
+            if directory:
+                os.setxattr(fd, ACL_DEFAULT, raw)
+            os.fchmod(fd, mode)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def own_created(fd, *, service_ownership=False):
     owner = (999, 999) if service_ownership else (os.geteuid(), os.getegid())
     info = os.fstat(fd)
@@ -253,6 +337,10 @@ def restricted_entry(entry):
     return not mode & 0o040
 
 
+def manifest_path_key(path):
+    return (path != '.', path)
+
+
 def validate_manifest(value):
     if not isinstance(value, dict) or set(value) != {'entries', 'restricted'} or not isinstance(value['entries'], list) or not isinstance(value['restricted'], list):
         fail('invalid_manifest', 'Expected entries and restricted arrays')
@@ -278,8 +366,8 @@ def validate_manifest(value):
             fail('invalid_manifest', 'Invalid SHA-256 digest')
         seen[path] = entry
         paths.append(path)
-    if paths != sorted(paths) or paths[0] != '.':
-        fail('invalid_manifest', 'Manifest must contain a root and sorted unique paths')
+    if paths[0] != '.' or paths != sorted(paths, key=manifest_path_key):
+        fail('invalid_manifest', 'Manifest must contain a root first and sorted unique non-root paths')
     for path in paths[1:]:
         parent = path.rsplit('/', 1)[0] if '/' in path else '.'
         if parent not in seen or seen[parent]['type'] != 'directory':
@@ -291,7 +379,7 @@ def validate_manifest(value):
     return value
 
 
-def capture_fd(root):
+def capture_fd(root, *, permission_check=None):
     entries, metadata = [], {}
     root_mount = mount_id(root)
     def visit(fd, path):
@@ -299,6 +387,8 @@ def capture_fd(root):
         if mount_id(fd) != root_mount:
             fail('unsafe_path', 'Nested mounts are not supported', path=path, path_scope='transfer_source')
         mode = stat.S_IMODE(before.st_mode)
+        if permission_check is not None:
+            mode = permission_check(fd, path, stat.S_ISDIR(before.st_mode))
         entry = {'path': path, 'type': 'directory', 'size': 0, 'mode': mode}
         if stat.S_ISREG(before.st_mode):
             if before.st_nlink != 1:
@@ -334,7 +424,7 @@ def capture_fd(root):
         if len(entries) > MAX_ENTRIES:
             fail('invalid_manifest', 'Tree exceeds the member count limit')
     visit(root, '.')
-    entries.sort(key=lambda entry: entry['path'])
+    entries.sort(key=lambda entry: manifest_path_key(entry['path']))
     manifest = {'entries': entries, 'restricted': [entry['path'] for entry in entries if restricted_entry(entry)]}
     return validate_manifest(manifest), metadata
 
@@ -347,8 +437,14 @@ def capture_source(path):
         os.close(fd)
 
 
-def verify_tree(fd, manifest, *, service_ownership=False):
-    observed, metadata = capture_fd(fd)
+def verify_tree(fd, manifest, *, service_ownership=False, sharing_uid=None, allow_unshared=False):
+    expected = {entry['path']: entry for entry in manifest['entries']}
+    def check(child, path, directory):
+        if path not in expected or directory != (expected[path]['type'] == 'directory'):
+            fail('manifest_mismatch', 'Tree paths or types changed')
+        return verify_permissions(child, expected[path]['mode'], directory=directory,
+                                  sharing_uid=sharing_uid, allow_unshared=allow_unshared)
+    observed, metadata = capture_fd(fd, permission_check=check if service_ownership else None)
     if observed != manifest or (service_ownership and any(item[4:6] != (999, 999) for item in metadata.values())):
         fail('manifest_mismatch', 'Tree content, permissions, or ownership changed')
 

@@ -7,8 +7,7 @@ import sys
 import tempfile
 
 from setup_common import (Docker, NATIVE_PROJECT, SetupError, import_source, load_profile,
-                          prepare_import, validate_destination, validate_storage)
-from setup_transfer import safe_extract
+                          prepare_import, require_linux_client, validate_destination, validate_storage)
 
 
 class Cancelled(Exception):
@@ -50,17 +49,23 @@ def parser():
     result.add_argument('action', choices=('import', 'export'))
     result.add_argument('source', nargs='?', help='Client source folder (import) or workspace-relative path (export).')
     result.add_argument('destination', nargs='?', help='New client destination folder (export only).')
-    result.add_argument('--into', help='New workspace child folder for import.')
+    result.add_argument('--into', type=nonempty, help='New workspace child folder for import.')
     result.add_argument('--allow-restricted', action='store_true', help='Authorize GeoCluster service-account access to private files in the imported copy.')
-    result.add_argument('--image', help='Installed compatible image for explicit storage (default: geocluster-runtime:latest).')
+    result.add_argument('--image', type=nonempty, help='Installed compatible image for explicit storage (default: geocluster-runtime:latest).')
     storage = result.add_mutually_exclusive_group()
-    storage.add_argument('--workspace-volume')
-    storage.add_argument('--workspace-root')
+    storage.add_argument('--workspace-volume', type=nonempty)
+    storage.add_argument('--workspace-root', type=nonempty)
     return result
 
 
+def nonempty(value):
+    if not value:
+        raise argparse.ArgumentTypeError('explicit values must not be empty')
+    return value
+
+
 def select(docker, args):
-    explicit = any((args.image, args.workspace_volume, args.workspace_root))
+    explicit = any(value is not None for value in (args.image, args.workspace_volume, args.workspace_root))
     if explicit:
         if not (args.workspace_volume or args.workspace_root):
             raise SetupError('Explicit transfers require --workspace-volume or --workspace-root. Saved and explicit selections cannot be mixed.', 'usage')
@@ -155,6 +160,7 @@ def choose_export(docker, storage, project, image_id):
 
 
 def export_files(docker, storage, project, image_id, args):
+    from setup_transfer import safe_extract
     if args.into or args.allow_restricted:
         raise SetupError('--into and --allow-restricted are import options.', 'usage')
     source = args.source or choose_export(docker, storage, project, image_id)
@@ -175,6 +181,7 @@ def export_files(docker, storage, project, image_id, args):
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    require_linux_client()
     # Diagnose omitted values before touching Docker when unattended.
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         if not args.source:
