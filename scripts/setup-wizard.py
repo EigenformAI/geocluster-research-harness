@@ -1051,16 +1051,21 @@ class Wizard:
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if argv == ['--help']:
+    if argv in (['--help'], ['-h']):
         print('Usage: ./scripts/setup.sh\n\nSet up a native GeoCluster workspace in six guided steps.\nPress Enter for defaults, ? for help, b to go back, or q to quit.\nAn interactive terminal is required. Setup never collects provider credentials.\n\nFor unattended use, run scripts/build-docker.sh and scripts/run-runtime-tui.sh.\nTo return to your saved workspace, run ./scripts/tui.sh.')
         return 0
     if argv:
         print('Usage: ./scripts/setup.sh [--help]', file=sys.stderr)
         return 2
+    import setup_common
+    try:
+        setup_common.require_linux_client()
+    except setup_common.SetupError as error:
+        print(str(error), file=sys.stderr)
+        return 1
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print('Setup needs an interactive terminal. Run ./scripts/setup.sh in your terminal.\nFor unattended setup, use scripts/build-docker.sh and scripts/run-runtime-tui.sh.', file=sys.stderr)
         return 2
-    import setup_common
     return Wizard(setup_common).run()
 
 

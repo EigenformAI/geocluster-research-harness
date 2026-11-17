@@ -196,7 +196,7 @@ test("host sharing auto selects the invoking UID on healthy Docker that omits em
 		assertHostBootstrap(result, "12345")
 		assert.match(result.output, /auto.*12345/i)
 		assert.deepEqual(result.calls.map((call) => call[0] === "docker" && call[1] === "info" ? call.slice(0, 2) : call), [
-			["uname", "-s"], ["docker", "context", "show"], ["docker", "context", "inspect", "default"],
+			["uname", "-s"], ["uname", "-s"], ["docker", "context", "show"], ["docker", "context", "inspect", "default"],
 			["docker", "info"], ["id", "-u"], ["docker", ...result.args],
 		])
 	}
@@ -218,12 +218,19 @@ test("host sharing mode matrix ignores inherited UID for volumes, opt-out, and e
 				const uid = !storage.length || mode.at(-1) === "none" ? "" : mode.at(-1) === "23456" ? "23456" : "12345"
 				assertHostBootstrap(result, uid)
 				if (!storage.length) assert.match(result.output, /volume transfer mode/i)
-				if (!uid) assert.deepEqual(result.calls, [["docker", ...result.args]], "disabled sharing needs no identity or daemon probes")
+				if (!uid) assert.deepEqual(result.calls, [["uname", "-s"], ["docker", ...result.args]], "disabled sharing checks client OS but needs no identity or daemon probes")
 			}
 		}
 	}
 	for (const storage of [[], ["--workspace-root", root]]) {
-		assertHostBootstrap(await run([...storage, "--host-uid", "none"], { DOCKER_HOST: "ssh://private-user:private-password@remote.invalid", FAKE_UID: "0", FAKE_UNAME: "Darwin" }), "")
+		assertHostBootstrap(await run([...storage, "--host-uid", "none"], { DOCKER_HOST: "ssh://private-user:private-password@remote.invalid", FAKE_UID: "0" }), "")
+		for (const mode of ["none", "auto", "23456"]) {
+			const unsupported = await run([...storage, "--host-uid", mode], { FAKE_UNAME: "Darwin" })
+			assert.equal(unsupported.status, 2, unsupported.output)
+			assert.match(unsupported.output, /Linux client/)
+			assert.equal(unsupported.args, null)
+			assert.deepEqual(unsupported.calls, [["uname", "-s"]], "non-Linux clients never reach Docker or UID selection")
+		}
 	}
 })
 
@@ -259,7 +266,7 @@ test("host sharing resolves Docker context/environment precedence and warns for 
 	]) {
 		const result = await run(["--workspace-root", root, "--host-uid", "23456"], env)
 		assertHostBootstrap(result, "23456")
-		assert.deepEqual(result.calls.slice(0, -1), expected, "numeric override resolves the endpoint without requiring local/daemon qualification")
+		assert.deepEqual(result.calls.slice(0, -1), [["uname", "-s"], ...expected], "numeric override checks the client OS and resolves the endpoint without local/daemon qualification")
 		assert.match(result.output, /warn.*daemon-host/i)
 		assert.ok(result.output.includes(await fs.realpath(root)), "warning identifies the resolved bind source")
 		assert.doesNotMatch(result.output, /private-password|private-user|remote\.invalid/)
@@ -269,7 +276,7 @@ test("host sharing resolves Docker context/environment precedence and warns for 
 	assert.match(unavailable.output, /warn.*daemon-host/i)
 	const auto = await run(["--workspace-root", root], { DOCKER_CONTEXT: "custom", DOCKER_HOST: "ssh://secret@remote.invalid" })
 	assert.equal(auto.status, 2, auto.output)
-	assert.deepEqual(auto.calls, [["uname", "-s"], ["docker", "context", "inspect", "custom"]])
+	assert.deepEqual(auto.calls, [["uname", "-s"], ["uname", "-s"], ["docker", "context", "inspect", "custom"]])
 	assert.match(auto.output, /DOCKER_CONTEXT/)
 })
 
@@ -284,7 +291,7 @@ test("host sharing auto requires complete supported Docker daemon metadata and a
 		{ ...info, ServerErrors: "unavailable" },
 		...Object.keys(info).map((key) => Object.fromEntries(Object.entries(info).filter(([name]) => name !== key))),
 	].map((value) => JSON.stringify(value))]
-	for (const env of [{ FAKE_UNAME: "Darwin" }, { FAKE_INFO_STATUS: "1" }, ...invalid.map((value) => ({ FAKE_INFO_JSON: value }))]) {
+	for (const env of [{ FAKE_INFO_STATUS: "1" }, ...invalid.map((value) => ({ FAKE_INFO_JSON: value }))]) {
 		const result = await run(["--workspace-root", root], env)
 		assert.equal(result.status, 2, result.output)
 		assert.equal(result.args, null)

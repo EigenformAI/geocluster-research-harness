@@ -16,6 +16,9 @@ while [ "$#" -gt 0 ]; do
         --image|--workspace-volume|--workspace-root|--host-uid|--engine-env|--processing-model|--processing-engine-descriptor)
             [ "$#" -ge 2 ] || die "$1 requires a value"
             case "$1" in
+                --image|--workspace-volume|--workspace-root) [ -n "$2" ] || die "$1 requires a nonempty value" ;;
+            esac
+            case "$1" in
                 --image) image="$2" ;;
                 --workspace-volume) volume="$2" ;;
                 --workspace-root) workspace_root="$2" ;;
@@ -44,6 +47,7 @@ while [ "$#" -gt 0 ]; do
         *) die "unknown option: $1" ;;
     esac
 done
+[ "$(uname -s)" = Linux ] || die 'GeoCluster native host commands require a Linux client. A Linux Docker daemon alone (including Docker Desktop on macOS or Windows) is not sufficient.'
 [ -z "$processing_descriptor" ] || [ -n "$processing_model" ] || die 'an engine descriptor requires a processing model (--processing-model)'
 if [ -n "$processing_model" ] && ! [[ "$processing_model" =~ ^[^/[:space:][:cntrl:]#]+/[^[:space:][:cntrl:]#]+(#[A-Za-z0-9._-]+)?$ ]]; then
     die 'processing model must be provider/model[#variant]; model IDs may contain slashes'

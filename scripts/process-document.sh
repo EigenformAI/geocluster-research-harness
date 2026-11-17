@@ -18,6 +18,8 @@ class UsageError(ValueError):
 
 def main():
     args = sys.argv[1:]
+    if args and args not in (["--help"], ["-h"]) and sys.platform != 'linux':
+        raise ValueError('GeoCluster native host commands require a Linux client. A Linux Docker daemon alone (including Docker Desktop on macOS or Windows) is not sufficient.')
     if any(arg == '--project' or arg.startswith('--project=') for arg in args):
         raise UsageError('--project has been removed; native commands use one workspace. Select its storage with --workspace-volume or --workspace-root.')
     volume, root, container = "geocluster-native-workspace", None, None
@@ -25,6 +27,8 @@ def main():
         if len(args) < 2:
             raise ValueError(f"{args[0]} requires a value")
         key, value = args[:2]
+        if not value:
+            raise UsageError(f"{key} requires a nonempty value")
         args = args[2:]
         if key == "--workspace-volume": volume, root = value, None
         elif key == "--workspace-root": root = str(Path(value).resolve(strict=True))

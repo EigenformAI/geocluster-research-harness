@@ -16,6 +16,27 @@ spec.loader.exec_module(files)
 
 
 class TransferTests(unittest.TestCase):
+    def test_host_wrappers_reject_empty_selectors_before_docker_or_terminal(self):
+        for name, options in (('run-runtime-tui.sh', ('--image', '--workspace-volume', '--workspace-root')),
+                              ('process-document.sh', ('--workspace-volume', '--workspace-root'))):
+            for option in options:
+                with self.subTest(name=name, option=option):
+                    result = subprocess.run(['bash', str(Path(__file__).with_name(name)), option, '',
+                                             *(['list'] if name == 'process-document.sh' else [])],
+                                            capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn('nonempty value', result.stderr)
+                    self.assertNotIn('requires a terminal', result.stderr)
+
+    def test_empty_explicit_selectors_are_rejected_before_docker_or_saved_reads(self):
+        for option in ('--image', '--workspace-volume', '--workspace-root'):
+            for extras in ([], ['--workspace-volume', 'explicit-data'] if option == '--image' else ['--image', 'explicit:image']):
+                with self.subTest(option=option, extras=extras):
+                    with patch.object(files, 'Docker', side_effect=AssertionError('must not touch Docker')), patch.object(files, 'load_profile', side_effect=AssertionError('must not load saved settings')):
+                        with self.assertRaises(SystemExit) as error:
+                            files.main(['import', '/source', option, '', *extras])
+                    self.assertEqual(error.exception.code, 2)
+
     def test_command_reports_rejected_nested_entry_before_runtime_import(self):
         for kind in ('link', 'long-name'):
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:

@@ -61,6 +61,13 @@ who want their own supplier credentials use the native profile.
 
 ## Local native terminal UI
 
+Native host setup, saved and explicit launch, and file transfers require a
+**Linux client** as well as a **Linux x64 Docker daemon**. A remote Linux daemon
+or Docker Desktop's Linux VM does not provide Linux filesystem primitives to a
+macOS or Windows client. Run the host commands from a Linux environment. Choosing
+Docker-managed storage does not remove this client requirement. Help remains
+available without Docker on unsupported clients.
+
 `./scripts/run-runtime-tui.sh` starts the pinned engine after local services are
 ready. Ordinary startup uses `--standalone`. Optional native processing uses one
 owned server with a `--server` TUI attachment. `/connect` manages native accounts. `/models` selects
@@ -80,6 +87,16 @@ qualified local bind storage.
 ID for this checkout. `./scripts/tui.sh` opens that saved workspace without launch
 overrides. The explicit launcher does not read or change those saved choices.
 Native launch always uses the fixed internal project `default`.
+
+File transfers use either the saved image/storage choices or explicit choices,
+never a mixture. Explicit empty `--image`, `--workspace-volume`, and
+`--workspace-root` values are errors, not requests for saved defaults.
+Local settings and small Docker metadata retain a 64 KiB JSON limit. Workspace
+inspection has a separate 16 MiB response limit for child names and operation
+summaries; paginated folder listings also have a 16 MiB limit to accommodate up to
+1000 escaped paths. These bounds do not limit file contents or change transfer
+manifest limits. Excessive inspection responses are rejected rather than
+truncated or treated as a missing workspace.
 
 Native user configuration uses ordinary OpenCode `opencode.json` or
 `opencode.jsonc`. Its writable XDG config is separate from bundled geology config.

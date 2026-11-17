@@ -32,7 +32,12 @@ the findings.
 
 You need:
 
-- A running Linux x64 Docker environment, with Buildx for image builds.
+- A Linux client environment where you run the host commands (setup, launch,
+  import, and export). macOS and Windows clients are not supported: transfers
+  depend on Linux filesystem safety primitives.
+- A running Linux x64 Docker daemon, with Buildx for image builds. This is a
+  separate requirement from the client OS; Docker Desktop's Linux daemon does
+  not make a macOS or Windows client compatible.
 - Bash, Git, Python 3, and an interactive terminal.
 - A model-provider account or API key supported by OpenCode.
 
