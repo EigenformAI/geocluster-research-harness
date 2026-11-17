@@ -832,8 +832,9 @@ class Wizard:
         else:
             try:
                 self.check()
+                creating_root = not self.host_plan.get('existing')
                 self.support.create_host_root(self.host_plan)
-                if not self.host_plan.get('existing'):
+                if creating_root:
                     self.mark(f"workspace {storage['path']} created")
             except (self.support.SetupError, OSError) as exc:
                 if getattr(exc, 'code', '').replace('-', '_') in ('identity', 'docker_changed'):

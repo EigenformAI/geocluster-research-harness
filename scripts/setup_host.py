@@ -16,6 +16,7 @@ REPO = Path(__file__).resolve().parent.parent
 SOURCE = Path(__file__).with_name("setup-host-root.py")
 SOURCE_LIMIT = 1024 * 1024
 _READONLY_HELPER = None
+_REUSE_DESCRIPTION = "Reuse the protected workspace without changing ownership or permissions. The locked container verifies its native profile."
 
 
 class HostRootPlan(dict):
@@ -171,7 +172,7 @@ def host_root_plan(path) -> dict:
             helper.validate_prepared_root(fds[-1])
             plan["command"] = ""
             plan["_missing"] = []
-            plan["description"] = "Reuse the protected workspace without changing ownership or permissions. The locked container verifies its native profile."
+            plan["description"] = _REUSE_DESCRIPTION
         else:
             helper.validate_target(target, account, REPO, creating=True)
             helper.validate_home(fds, records, account)
@@ -254,6 +255,14 @@ def create_host_root(plan) -> None:
         if (stat.S_IMODE(created["mode"]) != 0o755 or created["mount"] != records[-1]["mount"]
                 or created["dev"] != records[-1]["dev"]):
             raise ValueError("The new protected workspace failed verification; retain it for inspection.")
+        helper.validate_prepared_root(leaf)
         helper.revalidate_chain(fds + [leaf], records + [created], account.pw_uid)
+        # Retain the verified inode and its approved name, not a fresh path plan.
+        # Later applies must revalidate this leaf together with its ancestors.
+        plan.update(_fds=fds + [leaf], _records=records + [created], existing=True,
+                    command="", description=_REUSE_DESCRIPTION)
     finally:
-        os.close(leaf)
+        # The update may complete just before an interrupt. Never close an FD
+        # already owned by the plan, including on that interrupted return path.
+        if leaf not in plan["_fds"]:
+            os.close(leaf)
