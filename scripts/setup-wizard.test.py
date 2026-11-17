@@ -299,6 +299,38 @@ class WizardTests(unittest.TestCase):
         self.assertEqual(support.saved[0]['starter']['kind'], 'existing')
         self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 2)
 
+    def test_host_reapproval_revalidates_retained_plan_and_records_creation_once(self):
+        for route in ('back', 'save-retry'):
+            with self.subTest(route=route):
+                support = Support()
+                plan = {'existing': False}
+                support.allowed_host_base = lambda: Path('/synthetic/workspaces')
+                support.host_root_plan = lambda path: plan
+                applies = []
+                def create(approved):
+                    self.assertIs(approved, plan)
+                    applies.append(approved['existing'])
+                    approved['existing'] = True
+                support.create_host_root = create
+                if route == 'back':
+                    answers = '\n2\n\n3\n\nb\n2\n1\n\nn\n'
+                else:
+                    original = support.save_profile
+                    attempts = []
+                    def save(profile, text):
+                        attempts.append(1)
+                        if len(attempts) == 1:
+                            raise OSError('synthetic settings-save failure')
+                        original(profile, text)
+                    support.save_profile = save
+                    answers = '\n2\n\n3\n\n\n\nn\n'
+                code, support, output, guide = self.run_guide(answers, support)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(applies, [False, True])
+                self.assertEqual(output.count('Prepare this workspace? [Y/n]:'), 2)
+                self.assertEqual(guide.completed.count('workspace /synthetic/workspaces/default created'), 1)
+                self.assertIsNotNone(support.saved)
+
     def test_change_menu_back_returns_to_review(self):
         code, support, output, _ = self.run_guide('\n\n3\nn\nb\n\nn\n')
         self.assertEqual(code, 0)
